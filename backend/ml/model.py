@@ -117,6 +117,8 @@ class SthiraPhysGNN_Engine:
         if len(self.history) > self.window_size:
             self.history.pop(0)
 
+        T = len(self.history)
+
         coords_raw = curr_frame[:, :3]
         vis_raw = curr_frame[:, 3]
 
