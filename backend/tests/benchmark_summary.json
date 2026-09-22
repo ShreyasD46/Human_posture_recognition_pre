@@ -1,0 +1,8 @@
+{
+  "raw_mpjpe": 42.08015060424805,
+  "refined_mpjpe": 28.37458038330078,
+  "jitter_reduction": 76.91482525614336,
+  "bone_error_raw": 6.660018861293793,
+  "bone_error_refined": 4.527881368994713,
+  "occlusion_improvement": 57.10989151622823
+}

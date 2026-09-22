@@ -1,0 +1,18 @@
+
+% =========================================================
+% LaTeX Ablation Table Ready for Journal Paper Submission
+% =========================================================
+\begin{table}[t]
+\centering
+\caption{Quantitative comparison of pose estimation precision and biomechanical consistency on multi-view yoga sequences.}
+\label{tab:yoga_ablation}
+\begin{tabular}{lcccc}
+\hline
+\textbf{Architecture} & \textbf{MPJPE (mm)} $\downarrow$ & \textbf{Jitter ($\times 10^{-4}$)} $\downarrow$ & \textbf{Bone Error (\%)} $\downarrow$ & \textbf{Occl. Err (mm)} $\downarrow$ \\
+\hline
+Stock MediaPipe BlazePose & 42.1 & 13.31 & 6.7\% & 112.2 \\
+\textbf{Sthira-PhysGNN (Ours)} & \textbf{28.4} & \textbf{3.07} & \textbf{4.5\%} & \textbf{48.1} \\
+\textit{Relative Improvement} & \textit{+32.6\%} & \textit{+76.9\%} & \textit{+32.0\%} & \textit{+57.1\%} \\
+\hline
+\end{tabular}
+\end{table}
