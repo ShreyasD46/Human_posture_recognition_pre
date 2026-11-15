@@ -1,0 +1,45 @@
+id: tadasana
+name: Tadasana (Mountain Pose)
+category: yoga
+muscle_groups: [quadriceps, core, spinal_erectors, calves]
+difficulty: beginner
+camera_view: front
+min_detection_confidence: 0.55
+required_joints: [left_knee, right_knee, left_spine]
+instructions: "Stand tall with feet hip-width apart, arms relaxed at your sides, spine long, shoulders stacked directly over hips."
+
+phases:
+  - id: hold
+    description: Grounded standing alignment
+    target_angles:
+      left_knee: { ideal: 178.0, tolerance: 8.0, weight: 0.25 }
+      right_knee: { ideal: 178.0, tolerance: 8.0, weight: 0.25 }
+      left_spine: { ideal: 178.0, tolerance: 10.0, weight: 0.35 }
+      left_shoulder: { ideal: 95.0, tolerance: 15.0, weight: 0.15 }
+
+hold_rules:
+  hold_time_target_seconds: 15.0
+  breathing_pace_seconds: 3.5
+  pacing_guide: "Inhale, crown reaching toward sky. Exhale, root evenly into the soles of your feet."
+
+form_rules:
+  - id: locked_knees
+    joint: left_knee
+    condition: "left_knee < 170"
+    severity: minor
+    feedback: "Soften your knees, don't lock them"
+    weight: 0.25
+
+  - id: spine_lean
+    joint: left_spine
+    condition: "abs(left_spine - 178) > 10"
+    severity: moderate
+    feedback: "Stand tall, stack your shoulders over your hips"
+    weight: 0.40
+
+  - id: shoulder_tension
+    joint: left_shoulder
+    condition: "left_shoulder < 80"
+    severity: minor
+    feedback: "Relax your shoulders down and back away from your ears"
+    weight: 0.20

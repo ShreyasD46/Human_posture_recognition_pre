@@ -1,165 +1,151 @@
 """
-AI agent layer — runs only once, after a session ends (not per-frame),
-so latency/cost don't matter here. Sends aggregated, anonymised session
-stats (never raw video/keypoints) to an LLM for natural-language coaching.
-
-If ANTHROPIC_API_KEY is not set, falls back to a deterministic templated
-report so the app runs end-to-end without any API key.
-
-Phase 3: accepts session_stats dict (with avg_score, score_trend, worst_joint)
-         and history list for cross-session trend narrative.
+Hybrid AI Session Summary Generator.
+Runs 100% offline via deterministic template engine on Raspberry Pi 4B.
+Optionally enhances narrative via external LLM (Anthropic / OpenAI / Gemini)
+if API key and internet connectivity are configured.
 """
 import os
 import json
 from collections import Counter
+from typing import Dict, List, Any, Tuple, Optional
 
-POSE_LABELS = {
-    "tadasana": "Tadasana", "vrikshasana": "Vrikshasana", "trikonasana": "Trikonasana",
-    "virabhadrasana_ii": "Warrior II", "utkatasana": "Utkatasana",
-}
-
-CLINICAL_CAVEAT = (
-    "This feedback is generated automatically from joint-angle measurements and is not "
-    "clinically validated — please consult a qualified yoga teacher or physiotherapist "
-    "for injury concerns."
+SAFETY_DISCLAIMER = (
+    "Disclaimer: This feedback is generated automatically from computer-vision joint-angle measurements "
+    "for athletic coaching only and is not medical diagnosis or advice. If you experience pain or joint "
+    "discomfort, please stop immediately and consult a certified trainer or physiotherapist."
 )
 
 
-# ---------------------------------------------------------------------------
-# Templated fallback (no API key required)
-# ---------------------------------------------------------------------------
+def _offline_deterministic_summary(
+    exercise_name: str,
+    category: str,
+    accuracy: float,
+    total_reps: int,
+    hold_time: float,
+    target_hold: float,
+    errors: list,
+    session_stats: Optional[dict] = None,
+    history: Optional[list] = None
+) -> Tuple[str, List[str], str]:
+    """Generates deterministic, high-quality coaching feedback offline on Pi 4B."""
+    stats = session_stats or {}
+    avg_score = stats.get("avg_score", accuracy)
+    score_trend = stats.get("score_trend", 0.0)
+    worst_joint = stats.get("worst_joint")
+    asymmetry = stats.get("asymmetry_delta_deg", 0.0)
 
-def _trend_sentence(history: list[dict]) -> str:
-    """Build a trend sentence from the last N session avg_scores."""
-    if len(history) < 2:
-        return ""
-    first_score = history[0]["avg_score"] or 0
-    last_score  = history[-1]["avg_score"] or 0
-    delta = last_score - first_score
-    if delta >= 5:
-        return f"Your score has improved by roughly {delta:.0f} points over the last {len(history)} sessions — keep at it."
-    if delta <= -5:
-        return f"Your composite score has dipped {abs(delta):.0f} points recently — try shorter holds and focus on form."
-    return f"Your score has been consistent across the last {len(history)} sessions — a stable foundation to build from."
-
-
-def _templated_report(pose_name, accuracy, hold_time, target_hold, error_counts,
-                      session_stats=None, history=None):
-    label = POSE_LABELS.get(pose_name, pose_name)
-    avg_score = (session_stats or {}).get("avg_score")
-    score_trend = (session_stats or {}).get("score_trend")
-
-    if accuracy >= 90:
-        opener = f"Strong {label} — your alignment held steady through most of the session."
-    elif accuracy >= 70:
-        opener = f"Solid effort on {label}, with a few recurring alignment slips worth tightening up."
-    else:
-        opener = f"{label} is still finding its shape — that's normal this early, keep at it."
-
-    tips = []
-    if error_counts:
-        top_joint, count = error_counts.most_common(1)[0]
-        tips.append(
-            f"Your most frequent cue was on the {top_joint.replace('_', ' ')} — "
-            f"slow down and check that alignment before you settle into the hold."
-        )
-    if hold_time < target_hold:
-        tips.append(
-            f"You held for {hold_time:.0f}s of a {target_hold}s target — "
-            f"build hold time gradually rather than chasing it in one session."
-        )
-    if score_trend is not None and abs(score_trend) >= 5:
-        if score_trend > 0:
-            tips.append(f"Your form improved within this session (+{score_trend:.0f} pts) — you're warming up well.")
+    # 1. What went well (Opening narrative)
+    if category == "gym":
+        if total_reps > 0 and avg_score >= 80:
+            narrative = f"Solid workout on {exercise_name}! You completed {total_reps} reps with strong biomechanical control and clean range of motion."
+        elif total_reps > 0:
+            narrative = f"Good grit on {exercise_name} completing {total_reps} reps. Focusing on form stability will unlock even greater power and safety."
         else:
-            tips.append(f"Your alignment drifted as the session went on ({score_trend:.0f} pts) — try shorter holds.")
+            narrative = f"Completed practice session on {exercise_name}. Building movement patterns takes repetition — stay consistent."
+    else:
+        if avg_score >= 85 and hold_time >= target_hold:
+            narrative = f"Superb alignment on {exercise_name}! You held the posture for {hold_time:.0f}s with steady balance and strong joint stability."
+        elif hold_time >= target_hold * 0.7:
+            narrative = f"Solid effort on {exercise_name} with {hold_time:.0f}s hold time. A few minor alignment adjustments will make this posture effortless."
+        else:
+            narrative = f"Good practice on {exercise_name}. Hold time ({hold_time:.0f}s) will naturally lengthen as balance and neuromuscular stability deepen."
+
+    # 2. Top 3 Things to Fix (Actionable tips)
+    tips = []
+    if worst_joint:
+        j_clean = worst_joint.replace("_", " ")
+        tips.append(f"Primary focus joint: {j_clean}. Slow down your eccentric transition and stabilize this area first.")
+
+    if asymmetry > 15.0:
+        tips.append(f"Noticeable left/right asymmetry ({asymmetry:.0f}° delta). Focus on unilateral balance drills or dumbbell presses.")
+
+    if score_trend < -5.0:
+        tips.append("Form fatigue detected in later reps/seconds. Consider adding 15 seconds to your rest intervals.")
+    elif score_trend > 5.0:
+        tips.append("Great warmup effect: your alignment improved significantly as the session progressed.")
+
+    if category == "gym" and total_reps >= 10 and avg_score >= 88:
+        tips.append("Ready for progression: consider increasing weight by 2.5 kg or slowing your eccentric tempo to 3 seconds.")
 
     if not tips:
-        tips.append("Keep this consistency and start extending your hold time.")
+        tips.append("Maintain your consistent tempo and focus on deep breathing throughout every repetition.")
 
-    # Cross-session trend sentence
-    trend_note = _trend_sentence(history or [])
-    if trend_note:
-        tips.append(trend_note)
+    # Cross-session trend comparison
+    if history and len(history) >= 2:
+        prev = history[-2].get("avg_score", 0)
+        curr = avg_score
+        diff = curr - prev
+        if diff >= 3:
+            tips.append(f"Progress: Your form score improved by +{diff:.1f} points compared to your last session!")
+        elif diff <= -5:
+            tips.append(f"Score dipped by {abs(diff):.1f} points — ensure adequate sleep and hydration before your next session.")
 
-    return opener, tips[:3]
+    return narrative, tips[:3], SAFETY_DISCLAIMER
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-def generate_report(pose_name, accuracy, hold_time, target_hold, errors,
-                    session_stats=None, history=None):
+def generate_report(
+    exercise_name: str,
+    accuracy: float,
+    hold_time: float,
+    target_hold: float,
+    errors: list,
+    category: str = "yoga",
+    total_reps: int = 0,
+    session_stats: Optional[dict] = None,
+    history: Optional[list] = None
+) -> Dict[str, Any]:
     """
-    Parameters
-    ----------
-    errors        : list of {joint, direction, severity} dicts
-    session_stats : dict from session_stats.aggregate_session()  (optional)
-    history       : list from session_stats.get_pose_history()   (optional)
-
-    Returns
-    -------
-    dict {"summary": str, "tips": [str, ...]}
+    Public entrypoint for session report generation.
+    Always produces a valid result offline.
     """
-    error_counts = Counter(e["joint"] for e in errors)
+    narrative, tips, disclaimer = _offline_deterministic_summary(
+        exercise_name=exercise_name,
+        category=category,
+        accuracy=accuracy,
+        total_reps=total_reps,
+        hold_time=hold_time,
+        target_hold=target_hold,
+        errors=errors,
+        session_stats=session_stats,
+        history=history
+    )
+
+    # Check for optional Anthropic / OpenAI / Gemini cloud LLM key if online
     api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if api_key and os.environ.get("ENABLE_CLOUD_AI_REPORT"):
+        try:
+            import urllib.request
+            # Send only anonymized metrics (no video, no names, no images)
+            payload = json.dumps({
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 300,
+                "messages": [{
+                    "role": "user",
+                    "content": f"You are an encouraging gym & yoga coach. Summarize workout metrics: Exercise: {exercise_name}, Category: {category}, Score: {accuracy}%, Reps: {total_reps}, Errors: {len(errors)}. Give 1 summary sentence and 3 bullet tips. Keep under 100 words."
+                }]
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=payload,
+                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                text = data["content"][0]["text"]
+                lines = [l.strip() for l in text.split("\n") if l.strip()]
+                if lines:
+                    narrative = lines[0]
+                    tips = [l.lstrip("-•*0123456789. ") for l in lines[1:4]]
+        except Exception:
+            # Fallback gracefully to offline template
+            pass
 
-    if not api_key:
-        summary, tips = _templated_report(
-            pose_name, accuracy, hold_time, target_hold, error_counts,
-            session_stats=session_stats, history=history,
-        )
-        return {"summary": summary, "tips": tips, "caveat": CLINICAL_CAVEAT}
-
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-
-        stats_payload = {
-            "pose":                POSE_LABELS.get(pose_name, pose_name),
-            "accuracy_pct":        round(accuracy, 1),
-            "hold_time_seconds":   round(hold_time, 1),
-            "target_hold_seconds": target_hold,
-            "most_common_errors":  error_counts.most_common(3),
-        }
-        if session_stats:
-            stats_payload["avg_score"]   = session_stats.get("avg_score")
-            stats_payload["score_trend"] = session_stats.get("score_trend")
-            stats_payload["worst_joint"] = session_stats.get("worst_joint")
-        if history and len(history) >= 2:
-            stats_payload["session_history"] = [
-                {"date": h["date"], "avg_score": h["avg_score"]} for h in history[-5:]
-            ]
-
-        prompt = f"""Session stats: {json.dumps(stats_payload)}
-
-Write a warm, concise coaching response:
-1. A 1-2 sentence summary assessing this session.
-2. Up to 2 short, specific, actionable tips tied to the most frequent error joint.
-3. If session_history has 2+ entries, include ONE sentence noting improvement or regression.
-4. Do NOT include any clinical claims — accuracy notes are fine.
-
-Respond ONLY as JSON: {{"summary": str, "tips": [str, ...]}}"""
-
-        msg = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=300,
-            system=(
-                "You are a warm, concise yoga coach. Given aggregated session stats "
-                "(no images or personal data), write coaching feedback. "
-                "Respond ONLY as valid JSON with keys 'summary' and 'tips'."
-            ),
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = "".join(b.text for b in msg.content if b.type == "text")
-        result = json.loads(text.strip().strip("`").removeprefix("json"))
-        result["caveat"] = CLINICAL_CAVEAT
-        return result
-
-    except Exception:
-        summary, tips = _templated_report(
-            pose_name, accuracy, hold_time, target_hold, error_counts,
-            session_stats=session_stats, history=history,
-        )
-        return {"summary": summary, "tips": tips, "caveat": CLINICAL_CAVEAT}
+    return {
+        "summary": narrative,
+        "tips": tips,
+        "caveat": disclaimer,
+        "avg_score": (session_stats or {}).get("avg_score", accuracy),
+        "total_reps": total_reps,
+        "hold_time_seconds": hold_time,
+    }

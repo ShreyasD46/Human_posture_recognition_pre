@@ -1,0 +1,66 @@
+id: bench_press
+name: Bench Press
+category: gym
+muscle_groups: [chest, triceps, anterior_deltoids]
+difficulty: intermediate
+camera_view: front
+min_detection_confidence: 0.55
+required_joints: [left_elbow, right_elbow, left_shoulder, right_shoulder]
+instructions: "Lie flat on the bench. Grip the bar or dumbbells evenly. Lower toward mid-chest until elbows reach ~80 degrees, then press upward to full lockout."
+
+phases:
+  - id: ready
+    description: Arms fully extended holding weight
+    target_angles:
+      left_elbow: { ideal: 165.0, tolerance: 15.0, weight: 0.5 }
+      right_elbow: { ideal: 165.0, tolerance: 15.0, weight: 0.5 }
+    transition:
+      next_phase: descending
+      condition: "left_elbow < 150 and right_elbow < 150"
+
+  - id: descending
+    description: Lowering bar toward chest
+    transition:
+      next_phase: bottom
+      condition: "left_elbow <= 80 and right_elbow <= 80"
+      rollback_phase: ready
+      rollback_condition: "left_elbow > 155 and right_elbow > 155"
+
+  - id: bottom
+    description: Bar touches chest / elbows at 80 degrees
+    target_angles:
+      left_elbow: { ideal: 80.0, tolerance: 10.0, weight: 0.5 }
+      right_elbow: { ideal: 80.0, tolerance: 10.0, weight: 0.5 }
+    transition:
+      next_phase: ascending
+      condition: "left_elbow > 95 and right_elbow > 95"
+
+  - id: ascending
+    description: Pressing bar up
+    transition:
+      next_phase: ready
+      condition: "left_elbow > 160 and right_elbow > 160"
+
+rep_rules:
+  count_on_phase: ready
+  half_rep_count: false
+  min_rep_duration_seconds: 0.8
+  target_tempo:
+    eccentric: 2.0
+    pause: 0.5
+    concentric: 1.0
+
+form_rules:
+  - id: uneven_arms
+    joint: left_elbow
+    condition: "abs(left_elbow - right_elbow) > 25"
+    severity: moderate
+    feedback: "Fix Form: Keep both arms pressing evenly"
+    weight: 0.35
+
+  - id: hips_lifting
+    joint: left_hip
+    condition: "left_hip <= 140"
+    severity: major
+    feedback: "Fix Form: Keep your glutes planted on the bench"
+    weight: 0.3

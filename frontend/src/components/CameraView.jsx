@@ -6,12 +6,22 @@ const CONNECTIONS = [
   [11, 23], [12, 24], [23, 24],
   [23, 25], [25, 27], [24, 26], [26, 28],
 ];
-const FRAME_INTERVAL_MS = 1000 / 15; // throttle to ~15fps
+const FRAME_INTERVAL_MS = 1000 / 20; // 20 FPS high responsiveness
 
-export default function CameraView({ onFrame, statusColor, perJoint, refinedLandmarks, enablePhysGNN = true }) {
-  const videoRef   = useRef(null);
-  const canvasRef  = useRef(null);
-  const rafRef     = useRef(null);
+export default function CameraView({
+  onFrame,
+  statusColor,
+  perJoint,
+  jointColors,
+  ghostLandmarks,
+  problemJoints,
+  feedbackCue,
+  refinedLandmarks,
+  enablePhysGNN = true,
+}) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const rafRef = useRef(null);
   const lastSentRef = useRef(0);
   const { ready, error, detect, isFullyVisible } = usePoseDetection();
 
@@ -19,7 +29,9 @@ export default function CameraView({ onFrame, statusColor, perJoint, refinedLand
     let stream;
     (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+        });
         if (videoRef.current) videoRef.current.srcObject = stream;
       } catch {
         onFrame?.(null, false, "camera-denied");
@@ -31,18 +43,28 @@ export default function CameraView({ onFrame, statusColor, perJoint, refinedLand
   useEffect(() => {
     if (!ready) return;
     const loop = (t) => {
-      const video  = videoRef.current;
+      const video = videoRef.current;
       const canvas = canvasRef.current;
       if (video && canvas && video.readyState >= 2) {
         const landmarks = detect(video);
-        const displayLandmarks = (enablePhysGNN && refinedLandmarks) ? refinedLandmarks : landmarks;
-        drawOverlay(canvas, video, displayLandmarks, statusColor, perJoint, enablePhysGNN);
+        const displayLandmarks = enablePhysGNN && refinedLandmarks ? refinedLandmarks : landmarks;
+
+        drawOverlay(
+          canvas,
+          video,
+          displayLandmarks,
+          ghostLandmarks,
+          jointColors,
+          problemJoints,
+          feedbackCue,
+          statusColor,
+          perJoint
+        );
+
         const visible = isFullyVisible(landmarks);
 
         if (t - lastSentRef.current >= FRAME_INTERVAL_MS) {
           lastSentRef.current = t;
-
-          // Phase 2: include visibility; Phase 4: attach capturedAt timestamp
           const payload = landmarks
             ? landmarks.map((lm) => ({
                 x: lm.x,
@@ -59,118 +81,175 @@ export default function CameraView({ onFrame, statusColor, perJoint, refinedLand
     };
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [ready, statusColor, perJoint]);
+  }, [ready, statusColor, perJoint, jointColors, ghostLandmarks, problemJoints, feedbackCue]);
 
   return (
-    <div style={{
-      position: "relative", width: "100%", aspectRatio: "4 / 3",
-      borderRadius: 18, overflow: "hidden", background: "#0A1712",
-    }}>
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        aspectRatio: "4 / 3",
+        borderRadius: 20,
+        overflow: "hidden",
+        background: "#080F0D",
+        boxShadow: "0 20px 40px rgba(0,0,0,0.6)",
+      }}
+    >
       <video
         ref={videoRef}
-        autoPlay playsInline muted
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%",
-                 objectFit: "cover", transform: "scaleX(-1)" }}
+        autoPlay
+        playsInline
+        muted
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          transform: "scaleX(-1)",
+        }}
       />
-      <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
-      {!ready && !error && <div style={overlayMsgStyle}>Loading pose model…</div>}
-      {error    && <div style={overlayMsgStyle}>{error}</div>}
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+        }}
+      />
+      {!ready && !error && <div style={overlayMsgStyle}>⚡ Initializing AI Vision Engine…</div>}
+      {error && <div style={overlayMsgStyle}>{error}</div>}
     </div>
   );
 }
 
 const overlayMsgStyle = {
-  position: "absolute", inset: 0, display: "flex", alignItems: "center",
-  justifyContent: "center", color: "var(--text-muted)", fontSize: 14,
-  textAlign: "center", padding: 20,
+  position: "absolute",
+  inset: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "#94A3B8",
+  fontSize: 16,
+  fontWeight: 600,
+  background: "rgba(10, 15, 13, 0.85)",
+  textAlign: "center",
+  padding: 20,
 };
 
-// ---------------------------------------------------------------------------
-// Overlay drawing — colours joints by per-joint score, greys-out unmeasurable
-// ---------------------------------------------------------------------------
-
-/**
- * jointColor: returns a CSS color based on per-joint score value.
- *  null  → occluded (grey/dashed handled separately)
- *  0-49  → error red
- *  50-79 → warn amber
- *  80+   → good green
- */
-function jointColor(score, defaultColor) {
-  if (score === null || score === undefined) return "rgba(160,160,160,0.5)";
-  if (score >= 80) return "var(--success, #8FAE8B)";
-  if (score >= 50) return "var(--warn, #D9A257)";
-  return "var(--error, #C97158)";
-}
-
-function drawOverlay(canvas, video, landmarks, statusColor, perJoint, enablePhysGNN = true) {
+function drawOverlay(
+  canvas,
+  video,
+  landmarks,
+  ghostLandmarks,
+  jointColors,
+  problemJoints,
+  feedbackCue,
+  statusColor,
+  perJoint
+) {
   const ctx = canvas.getContext("2d");
-  const w   = (canvas.width  = video.clientWidth);
-  const h   = (canvas.height = video.clientHeight);
+  const w = (canvas.width = video.clientWidth);
+  const h = (canvas.height = video.clientHeight);
   ctx.clearRect(0, 0, w, h);
-  if (!landmarks) return;
 
-  const color = statusColor || "var(--accent-soft, #E7B978)";
+  if (!landmarks) return;
 
   ctx.save();
   ctx.translate(w, 0);
-  ctx.scale(-1, 1); // mirror to match the mirrored video
+  ctx.scale(-1, 1); // Mirrored space to match webcam view
 
-  // ── Connections ──────────────────────────────────────────────────────────
+  // ── 1. Draw RETARGETED GHOST Skeleton (Ideal Reference Form) ───────────
+  if (ghostLandmarks && ghostLandmarks.length >= 29) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(78, 242, 187, 0.45)"; // Translucent cyan
+    ctx.lineWidth = 3.0;
+    ctx.setLineDash([8, 6]);
+
+    CONNECTIONS.forEach(([a, b]) => {
+      const g1 = ghostLandmarks[a];
+      const g2 = ghostLandmarks[b];
+      if (g1 && g2) {
+        ctx.beginPath();
+        ctx.moveTo(g1.x * w, g1.y * h);
+        ctx.lineTo(g2.x * w, g2.y * h);
+        ctx.stroke();
+      }
+    });
+
+    // Ghost joints
+    ctx.fillStyle = "rgba(78, 242, 187, 0.75)";
+    [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].forEach((idx) => {
+      const g = ghostLandmarks[idx];
+      if (g) {
+        ctx.beginPath();
+        ctx.arc(g.x * w, g.y * h, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    ctx.restore();
+  }
+
+  // ── 2. Draw USER Skeleton (Color-Coded by Biomechanical Deviation) ─────
   CONNECTIONS.forEach(([a, b]) => {
-    const p1 = landmarks[a], p2 = landmarks[b];
+    const p1 = landmarks[a];
+    const p2 = landmarks[b];
     if (!p1 || !p2) return;
+
     ctx.beginPath();
     ctx.moveTo(p1.x * w, p1.y * h);
     ctx.lineTo(p2.x * w, p2.y * h);
-    ctx.strokeStyle = enablePhysGNN ? color : "rgba(231, 185, 120, 0.7)";
-    ctx.lineWidth   = enablePhysGNN ? 3.5 : 2;
+    ctx.strokeStyle = statusColor || "#E7B978";
+    ctx.lineWidth = 4.0;
     ctx.stroke();
   });
 
-  // ── Joints ───────────────────────────────────────────────────────────────
+  // ── 3. Draw Joints & Highlight Deviations ──────────────────────────────
   const keyJoints = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
-  // Build a landmark-index → joint-name mapping for per-joint colouring
-  const LM_JOINT_NAMES = {
-    25: "left_knee", 26: "right_knee", 27: "left_knee", 28: "right_knee",
-    23: "spine_lean", 11: "shoulder_level", 12: "shoulder_level",
-  };
-
   keyJoints.forEach((i) => {
     const p = landmarks[i];
     if (!p) return;
-    const jointName = LM_JOINT_NAMES[i];
-    const score = perJoint && jointName ? perJoint[jointName] : undefined;
-    const isInpainted = Boolean(p.is_inpainted);
-    
-    // Inpainted joint gets a highlighted cyan/teal aura
-    const dotColor = isInpainted 
-      ? "#4EF2BB"
-      : perJoint ? jointColor(score, color) : color;
+
+    let dotColor = "#8FAE8B"; // default green
+    if (jointColors) {
+      if (jointColors[i] === "red" || jointColors["left_elbow"] === "red") dotColor = "#EF4444";
+      else if (jointColors[i] === "amber") dotColor = "#F59E0B";
+    }
 
     ctx.beginPath();
-    ctx.arc(p.x * w, p.y * h, isInpainted ? 6.5 : 5, 0, Math.PI * 2);
+    ctx.arc(p.x * w, p.y * h, 6.0, 0, Math.PI * 2);
     ctx.fillStyle = dotColor;
     ctx.fill();
-
-    // Inpainted neural graph recovery ring
-    if (isInpainted) {
-      ctx.beginPath();
-      ctx.arc(p.x * w, p.y * h, 10, 0, Math.PI * 2);
-      ctx.strokeStyle = "#4EF2BB";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    } else if (score === null && perJoint) {
-      // Unmeasurable (occluded) joint ring
-      ctx.beginPath();
-      ctx.arc(p.x * w, p.y * h, 8, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(160,160,160,0.4)";
-      ctx.setLineDash([3, 3]);
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
+    ctx.lineWidth = 2.0;
+    ctx.strokeStyle = "#FFFFFF";
+    ctx.stroke();
   });
 
   ctx.restore();
+
+  // ── 4. On-Screen Target Angle Callouts & Problem Arcs ──────────────────
+  if (problemJoints && Object.keys(problemJoints).length > 0) {
+    let yOffset = 40;
+    ctx.font = "bold 15px Inter, system-ui, sans-serif";
+
+    Object.entries(problemJoints).forEach(([jointName, info]) => {
+      const text = `${jointName.replace("_", " ")}: ${info.measured}° → target ${info.ideal}°`;
+      ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+      ctx.fillRect(16, yOffset - 20, 260, 30);
+      ctx.fillStyle = info.severity === "major" ? "#EF4444" : "#F59E0B";
+      ctx.fillText(text, 24, yOffset);
+      yOffset += 38;
+    });
+  }
+
+  // ── 5. Signature Ghost Label in Top Right Corner ───────────────────────
+  if (ghostLandmarks && ghostLandmarks.length > 0) {
+    ctx.fillStyle = "rgba(15, 23, 42, 0.75)";
+    ctx.fillRect(w - 200, 16, 184, 28);
+    ctx.fillStyle = "#4EF2BB";
+    ctx.font = "600 13px Inter, sans-serif";
+    ctx.fillText("--- Ghost Reference Form", w - 190, 35);
+  }
 }

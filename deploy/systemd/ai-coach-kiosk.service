@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Fitness Coach Chromium Kiosk UI
+After=ai-coach-backend.service graphical.target
+Wants=ai-coach-backend.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+ExecStart=/opt/yoga-app/deploy/kiosk/start-kiosk.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

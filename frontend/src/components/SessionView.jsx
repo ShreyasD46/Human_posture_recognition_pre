@@ -7,49 +7,62 @@ import { useVoiceFeedback } from "../hooks/useVoiceFeedback.js";
 import { api } from "../services/api.js";
 import "./SessionView.css";
 
-// Phase flow: demo → calibrating → monitoring → complete
 export default function SessionView() {
-  const { poseId }  = useParams();
-  const navigate    = useNavigate();
+  const { poseId } = useParams();
+  const navigate = useNavigate();
   const { speakNow, speakAll, cancel } = useVoiceFeedback();
 
-  const [phase, setPhase]         = useState("demo");
-  const [poseInfo, setPoseInfo]   = useState(null);
-  const [feedback, setFeedback]   = useState(null);
-  const [summary, setSummary]     = useState(null);
-  const [elapsed, setElapsed]     = useState(0);
+  const [phase, setPhase] = useState("demo"); // "demo" | "calibrating" | "monitoring" | "complete"
+  const [exerciseInfo, setExerciseInfo] = useState(null);
+  const [feedback, setFeedback] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
   const [visibleOk, setVisibleOk] = useState(false);
   const [cameraDenied, setCameraDenied] = useState(false);
+  const [category, setCategory] = useState("gym");
 
-  // Sthira-PhysGNN Architecture Switcher (PINN vs Raw MediaPipe)
+  // Architecture toggle
   const [enablePhysGNN, setEnablePhysGNN] = useState(true);
+  const [voiceMode, setVoiceMode] = useState("default");
 
-  // Phase 7: voice mode toggle
-  const [voiceMode, setVoiceMode] = useState("default"); // "default" | "beginner" | "advanced"
+  const [toastMsg, setToastMsg] = useState(null);
+  const toastTimerRef = useRef(null);
 
-  // Phase 7: voice toast
-  const [toastMsg, setToastMsg]   = useState(null);
-  const toastTimerRef             = useRef(null);
-
-  const socketRef            = useRef(null);
-  const timerRef             = useRef(null);
+  const socketRef = useRef(null);
+  const timerRef = useRef(null);
   const calibrationStreakRef = useRef(0);
-  const spokenIntroRef       = useRef(false);
-  const phaseRef             = useRef(phase);
-
-  // Keep phaseRef in sync so socket callbacks read the latest phase
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  const spokenIntroRef = useRef(false);
+  const phaseRef = useRef(phase);
 
   useEffect(() => {
-    api.poses().then((list) => setPoseInfo(list.find((p) => p.id === poseId)));
+    phaseRef.current = phase;
+  }, [phase]);
+
+  useEffect(() => {
+    api.exercise(poseId)
+      .then((data) => {
+        setExerciseInfo(data);
+        if (data.category) setCategory(data.category);
+      })
+      .catch(() => {
+        // Fallback to poses API
+        api.poses().then((list) => {
+          const found = list.find((p) => p.id === poseId);
+          if (found) {
+            setExerciseInfo(found);
+            setCategory("yoga");
+          }
+        });
+      });
   }, [poseId]);
 
   useEffect(() => {
     const socket = connectSocket();
     socketRef.current = socket;
 
-    socket.on("session_started", () => {
+    socket.on("session_started", (data) => {
       setPhase("monitoring");
+      if (data?.category) setCategory(data.category);
       timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
     });
 
@@ -57,7 +70,6 @@ export default function SessionView() {
       setFeedback(data);
       if (data.speak?.length) {
         speakAll(data.speak);
-        // Phase 7: mirror spoken cue as on-screen toast
         showToast(data.speak[0]);
       }
     });
@@ -71,7 +83,7 @@ export default function SessionView() {
 
     socket.on("reconnect", () => {
       if (phaseRef.current === "monitoring") {
-        socket.emit("start_session", { pose_name: poseId, voice_mode: voiceMode });
+        socket.emit("start_session", { exercise_id: poseId, pose_name: poseId, voice_mode: voiceMode });
       }
     });
 
@@ -87,7 +99,6 @@ export default function SessionView() {
     };
   }, []);
 
-  // Phase 7: show a toast for ~3s then fade
   const showToast = useCallback((msg) => {
     if (!msg) return;
     clearTimeout(toastTimerRef.current);
@@ -95,9 +106,11 @@ export default function SessionView() {
     toastTimerRef.current = setTimeout(() => setToastMsg(null), 3200);
   }, []);
 
-  // Phase 2 + 4: handleFrame receives payload + capturedAt timestamp
   const handleFrame = (landmarks, visible, err, capturedAt) => {
-    if (err === "camera-denied") { setCameraDenied(true); return; }
+    if (err === "camera-denied") {
+      setCameraDenied(true);
+      return;
+    }
     setVisibleOk(visible);
 
     if (phaseRef.current === "calibrating") {
@@ -116,9 +129,14 @@ export default function SessionView() {
   const startSession = () => {
     if (!spokenIntroRef.current) {
       spokenIntroRef.current = true;
-      speakNow(`Starting ${poseInfo?.label || "your pose"}. ${poseInfo?.instructions || ""}`);
+      const title = exerciseInfo?.name || exerciseInfo?.label || "your workout";
+      speakNow(`Starting ${title}. Maintain steady form and follow the reference ghost.`);
     }
-    socketRef.current.emit("start_session", { pose_name: poseId, voice_mode: voiceMode });
+    socketRef.current.emit("start_session", {
+      exercise_id: poseId,
+      pose_name: poseId,
+      voice_mode: voiceMode,
+    });
   };
 
   const endSession = () => {
@@ -131,21 +149,51 @@ export default function SessionView() {
     setPhase("calibrating");
   }, []);
 
-  // Score-based status color
   const score = feedback?.score ?? null;
-  const statusColor = score !== null
-    ? score >= 80 ? "#8FAE8B" : score >= 50 ? "#D9A257" : "#C97158"
-    : feedback?.status === "correct" ? "#8FAE8B" : "#E7B978";
+  const statusColor =
+    score !== null
+      ? score >= 80
+        ? "#8FAE8B"
+        : score >= 50
+        ? "#D9A257"
+        : "#EF4444"
+      : feedback?.status === "correct"
+      ? "#8FAE8B"
+      : "#E7B978";
+
+  const isGym = category === "gym";
+  const repCount = feedback?.rep_count ?? 0;
+  const currentPhase = feedback?.current_phase ?? "ready";
+  const isOnBreak = feedback?.is_on_break ?? false;
+  const breakSecondsLeft = feedback?.break_seconds_left ?? 0;
 
   return (
     <div className="session-layout">
+      {/* Kiosk Header */}
       <div className="session-header">
-        <h1>{poseInfo?.label || "Loading pose…"}</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* Phase 1: live score gauge */}
-          {phase === "monitoring" && score !== null && (
-            <ScoreGauge score={score} />
-          )}
+        <div>
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 800,
+              textTransform: "uppercase",
+              letterSpacing: "0.8px",
+              color: isGym ? "#60A5FA" : "#34D399",
+              background: isGym ? "rgba(96,165,250,0.15)" : "rgba(52,211,153,0.15)",
+              padding: "4px 10px",
+              borderRadius: 6,
+              marginRight: 8,
+            }}
+          >
+            {isGym ? "🏋️ Gym Training" : "🧘 Yoga Posture"}
+          </span>
+          <h1 style={{ display: "inline-block", fontSize: 26, margin: "6px 0 0 0" }}>
+            {exerciseInfo?.name || exerciseInfo?.label || "Loading exercise…"}
+          </h1>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          {phase === "monitoring" && score !== null && <ScoreGauge score={score} />}
           {phase === "monitoring" && (
             <span className={`pill ${feedback?.status || ""}`}>
               <span className="dot" /> {formatTime(elapsed)}
@@ -154,10 +202,10 @@ export default function SessionView() {
         </div>
       </div>
 
-      {/* Phase 7: voice mode toggle — shown during demo phase */}
+      {/* Voice mode toggle */}
       {phase === "demo" && (
         <div className="voice-mode-row">
-          <span className="voice-mode-label">Voice cues:</span>
+          <span className="voice-mode-label">Audio Coaching Cues:</span>
           {["beginner", "default", "advanced"].map((m) => (
             <button
               key={m}
@@ -171,105 +219,119 @@ export default function SessionView() {
       )}
 
       {phase === "demo" ? (
-        <PoseDemo poseId={poseId} poseInfo={poseInfo} onReady={handleDemoReady} />
+        <PoseDemo poseId={poseId} poseInfo={exerciseInfo} onReady={handleDemoReady} />
       ) : cameraDenied ? (
         <div className="calibration-note">
           Camera access was blocked. Allow camera permissions in your browser and reload this page to continue.
         </div>
       ) : phase !== "complete" ? (
         <>
+          {/* Main Dual Skeleton Camera View */}
           <CameraView
             onFrame={handleFrame}
             statusColor={statusColor}
             perJoint={feedback?.per_joint ?? null}
+            jointColors={feedback?.joint_colors}
+            ghostLandmarks={feedback?.ghost_landmarks}
+            problemJoints={feedback?.problem_joints}
+            feedbackCue={feedback?.speak?.[0]}
             refinedLandmarks={feedback?.refined_landmarks}
             enablePhysGNN={enablePhysGNN}
           />
 
-          {/* Sthira-PhysGNN Architecture Switcher & Telemetry Bar */}
-          <div className="architecture-bar">
-            <div className="arch-switch-group">
-              <span className="arch-label">Architecture:</span>
-              <button
-                type="button"
-                className={`arch-btn ${enablePhysGNN ? "active-gnn" : ""}`}
-                onClick={() => setEnablePhysGNN(true)}
-                title="Physics-Informed Graph Neural Network with Dynamic Kinematic Attention"
-              >
-                ✦ Sthira-PhysGNN (PINN)
-              </button>
-              <button
-                type="button"
-                className={`arch-btn ${!enablePhysGNN ? "active-raw" : ""}`}
-                onClick={() => setEnablePhysGNN(false)}
-                title="Stock Pretrained MediaPipe BlazePose without Biomechanical Refinement"
-              >
-                Raw MediaPipe Baseline
-              </button>
-            </div>
+          {/* Kiosk Workout HUD (Gym Reps vs Yoga Hold) */}
+          {phase === "monitoring" && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isGym ? "repeat(4, 1fr)" : "repeat(3, 1fr)",
+                gap: 12,
+                marginTop: 16,
+              }}
+            >
+              {isGym ? (
+                <>
+                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
+                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>REPS</div>
+                    <div style={{ fontSize: 36, fontWeight: 900, color: "#38BDF8" }}>{repCount}</div>
+                  </div>
 
-            {feedback?.telemetry && (
-              <div className="telemetry-badges">
-                <span className="telemetry-badge" title="High-frequency joint acceleration noise (lower is smoother)">
-                  ⚡ Jitter: <strong>{enablePhysGNN ? (feedback.telemetry.jitter_refined ?? 0.0003) : (feedback.telemetry.jitter_raw ?? 0.0013)} σ</strong>
-                </span>
-                <span className="telemetry-badge" title="Anatomical bone stretching variance (0% is rigid)">
-                  🦴 Bone Consistency: <strong>{enablePhysGNN ? `${feedback.telemetry.bone_stretching_index ?? 4.5}%` : "6.8%"}</strong>
-                </span>
-                <span className="telemetry-badge highlight" title="True 3D Euclidean vector angles eliminating 2D foreshortening error">
-                  📐 <strong>3D True-Space Angle</strong>
-                </span>
-                {enablePhysGNN && (feedback.telemetry.inpainted_joints ?? 0) > 0 && (
-                  <span className="telemetry-badge inpaint" title="Joints reconstructed via Spatiotemporal Graph Inpainting">
-                    ✦ Inpainted: <strong>{feedback.telemetry.inpainted_joints} joint(s)</strong>
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
+                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>PHASE</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#FCD34D", marginTop: 8, textTransform: "uppercase" }}>
+                      {currentPhase}
+                    </div>
+                  </div>
 
-          {phase === "calibrating" && (
-            <div className="calibration-note">
-              {visibleOk
-                ? "Full body detected — hold still, starting…"
-                : "Step back until your shoulders, hips, knees and ankles are all visible."}
+                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
+                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>FORM SCORE</div>
+                    <div style={{ fontSize: 36, fontWeight: 900, color: score >= 80 ? "#34D399" : score >= 50 ? "#FBBF24" : "#F87171" }}>
+                      {score ? Math.round(score) : "--"}
+                    </div>
+                  </div>
+
+                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
+                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>STATUS</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: isOnBreak ? "#F87171" : "#34D399", marginTop: 8 }}>
+                      {isOnBreak ? `Rest: ${breakSecondsLeft}s` : "ACTIVE"}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
+                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>HOLD TIME</div>
+                    <div style={{ fontSize: 36, fontWeight: 900, color: "#34D399" }}>
+                      {Math.round(feedback?.good_hold_seconds ?? elapsed)}s
+                    </div>
+                  </div>
+
+                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
+                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>BREATH</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: "#38BDF8", marginTop: 6, textTransform: "capitalize" }}>
+                      {feedback?.breath_phase || "Breathe Steady"}
+                    </div>
+                  </div>
+
+                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
+                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>ALIGNMENT</div>
+                    <div style={{ fontSize: 36, fontWeight: 900, color: score >= 80 ? "#34D399" : "#FBBF24" }}>
+                      {score ? `${Math.round(score)}%` : "--"}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
-          {phase === "monitoring" && feedback && (
-            <div className="live-feedback-panel">
-              {feedback.status === "correct" ? (
-                <div className="feedback-correct">
-                  <span className="check-icon">✓</span> Alignment looks great — hold it!
-                </div>
-              ) : (
-                <div className="feedback-errors-list">
-                  {feedback.errors.map((e, i) => {
-                    // Phase 2: skip null per_joint (occluded, no error to show)
-                    const jScore = feedback.per_joint?.[e.joint];
-                    if (jScore === null) return null;
-                    return (
-                      <div key={i} className={`feedback-error-item severity-${e.severity}`}>
-                        <span className="error-dot" />
-                        {e.feedback || e.direction}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+          {phase === "calibrating" && (
+            <div className="calibration-note" style={{ fontSize: 18, padding: 24 }}>
+              {visibleOk
+                ? "✓ Full body locked! Stand steady, starting workout in 3… 2… 1…"
+                : exerciseInfo?.camera_view === "side"
+                ? "Turn sideways to the camera until your full side profile is in frame."
+                : "Step back until your shoulders, hips, knees and ankles are all visible in frame."}
+            </div>
+          )}
 
-              {/* Phase 2: unmeasurable joints hint */}
-              {Object.entries(feedback.per_joint || {}).some(([, v]) => v === null) && (
-                <div className="occlusion-hint">
-                  ⚠ Some joints are out of frame — step back or adjust your angle
-                </div>
-              )}
+          {phase === "monitoring" && feedback?.errors?.length > 0 && (
+            <div className="live-feedback-panel" style={{ marginTop: 14 }}>
+              <div className="feedback-errors-list">
+                {feedback.errors.map((e, i) => (
+                  <div key={i} className={`feedback-error-item severity-${e.severity}`}>
+                    <span className="error-dot" />
+                    {e.feedback || e.direction}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           {phase === "monitoring" && (
-            <div className="controls-row">
-              <button className="btn btn-primary" onClick={endSession}>End session</button>
+            <div className="controls-row" style={{ marginTop: 20 }}>
+              <button className="btn btn-primary" style={{ padding: "14px 40px", fontSize: 16 }} onClick={endSession}>
+                Complete Workout
+              </button>
             </div>
           )}
         </>
@@ -281,7 +343,6 @@ export default function SessionView() {
         />
       )}
 
-      {/* Phase 7: voice toast */}
       {toastMsg && (
         <div className="voice-toast" key={toastMsg}>
           <span className="toast-icon">🗣</span> {toastMsg}
@@ -291,114 +352,126 @@ export default function SessionView() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Score Gauge (Phase 1)
-// ---------------------------------------------------------------------------
-
 function ScoreGauge({ score }) {
-  const clamp  = Math.max(0, Math.min(100, score));
-  const color  = clamp >= 80 ? "var(--success)" : clamp >= 50 ? "var(--warn)" : "var(--error)";
+  const clamp = Math.max(0, Math.min(100, score));
+  const color = clamp >= 80 ? "#34D399" : clamp >= 50 ? "#FBBF24" : "#EF4444";
   const radius = 18;
-  const circ   = 2 * Math.PI * radius;
-  const dash   = (clamp / 100) * circ;
+  const circ = 2 * Math.PI * radius;
+  const dash = (clamp / 100) * circ;
 
   return (
     <div className="score-gauge" title={`Pose score: ${score}`}>
       <svg width="48" height="48" viewBox="0 0 48 48">
-        {/* Track */}
         <circle cx="24" cy="24" r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
-        {/* Arc */}
         <circle
-          cx="24" cy="24" r={radius}
+          cx="24"
+          cy="24"
+          r={radius}
           fill="none"
           stroke={color}
           strokeWidth="4"
           strokeLinecap="round"
           strokeDasharray={`${dash} ${circ}`}
-          strokeDashoffset={circ * 0.25}   /* start from top */
+          strokeDashoffset={circ * 0.25}
           style={{ transition: "stroke-dasharray 0.3s ease, stroke 0.3s ease" }}
         />
       </svg>
-      <span className="score-num" style={{ color }}>{Math.round(clamp)}</span>
+      <span className="score-num" style={{ color }}>
+        {Math.round(clamp)}
+      </span>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Session Summary (Phase 3 + 7)
-// ---------------------------------------------------------------------------
-
 function SessionSummary({ summary, onDone, onRetry }) {
   if (!summary) return null;
 
-  const trendIcon = summary.score_trend == null ? null
-    : summary.score_trend > 0 ? "↑"
-    : summary.score_trend < 0 ? "↓"
-    : "→";
+  const isGym = summary.category === "gym";
 
   return (
-    <div className="card summary-card">
-      <h2 style={{ fontSize: 22, marginBottom: 6 }}>Session complete</h2>
-      <p className="muted" style={{ marginTop: 0 }}>{summary.summary}</p>
+    <div className="card summary-card" style={{ maxWidth: 700, margin: "0 auto", padding: 32 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <h2 style={{ fontSize: 28, margin: 0 }}>Workout Complete! 🏅</h2>
+        <span
+          style={{
+            background: isGym ? "rgba(96,165,250,0.2)" : "rgba(52,211,153,0.2)",
+            color: isGym ? "#60A5FA" : "#34D399",
+            fontWeight: 800,
+            fontSize: 12,
+            textTransform: "uppercase",
+            padding: "4px 12px",
+            borderRadius: 8,
+          }}
+        >
+          {isGym ? "Gym Workout" : "Yoga Session"}
+        </span>
+      </div>
 
-      <div className="summary-stats">
-        <div>
-          <div className="stat-num">{summary.accuracy_pct}%</div>
-          <div className="stat-cap">time in correct alignment</div>
-        </div>
-        <div>
-          <div className="stat-num">{Math.round(summary.hold_time_seconds)}s</div>
-          <div className="stat-cap">of a {summary.target_hold_seconds}s target hold</div>
-        </div>
-        {summary.avg_score != null && (
+      <p className="muted" style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 24 }}>
+        {summary.summary}
+      </p>
+
+      <div className="summary-stats" style={{ marginBottom: 28 }}>
+        {isGym ? (
           <div>
-            <div className="stat-num">
-              {summary.avg_score}
-              {trendIcon && (
-                <span
-                  style={{
-                    fontSize: 18,
-                    marginLeft: 4,
-                    color: summary.score_trend > 0
-                      ? "var(--success)"
-                      : summary.score_trend < 0
-                      ? "var(--error)"
-                      : "var(--text-muted)",
-                  }}
-                >
-                  {trendIcon}
-                </span>
-              )}
-            </div>
-            <div className="stat-cap">avg form score</div>
+            <div className="stat-num" style={{ color: "#38BDF8" }}>{summary.total_reps || 0}</div>
+            <div className="stat-cap">Total Reps Completed</div>
+          </div>
+        ) : (
+          <div>
+            <div className="stat-num" style={{ color: "#34D399" }}>{Math.round(summary.hold_time_seconds || 0)}s</div>
+            <div className="stat-cap">of a {summary.target_hold_seconds}s target hold</div>
           </div>
         )}
+
+        <div>
+          <div className="stat-num" style={{ color: summary.avg_score >= 80 ? "#34D399" : "#FBBF24" }}>
+            {summary.avg_score || summary.accuracy_pct || 0}
+          </div>
+          <div className="stat-cap">Average Form Score</div>
+        </div>
+
+        <div>
+          <div className="stat-num" style={{ color: "#A78BFA" }}>
+            {summary.score_trend > 0 ? `+${summary.score_trend}` : summary.score_trend || "Stable"}
+          </div>
+          <div className="stat-cap">Session Momentum</div>
+        </div>
       </div>
 
       {summary.tips?.length > 0 && (
-        <>
-          <h3 style={{ fontSize: 15, marginBottom: 10 }}>For next time</h3>
+        <div style={{ marginBottom: 24 }}>
+          <h3 style={{ fontSize: 17, marginBottom: 12 }}>AI Coach Recommendations:</h3>
           <ul className="tip-list">
-            {summary.tips.map((t, i) => <li key={i}>{t}</li>)}
+            {summary.tips.map((t, i) => (
+              <li key={i} style={{ fontSize: 15, lineHeight: 1.5 }}>{t}</li>
+            ))}
           </ul>
-        </>
+        </div>
       )}
 
-      {/* Phase 7: clinical caveat */}
       {summary.caveat && (
-        <p className="clinical-caveat">{summary.caveat}</p>
+        <p className="clinical-caveat" style={{ fontSize: 12, opacity: 0.75, marginBottom: 24 }}>
+          {summary.caveat}
+        </p>
       )}
 
       <div className="controls-row">
-        <button className="btn btn-primary" onClick={onDone}>View progress</button>
-        <button className="btn btn-ghost" onClick={onRetry}>Try again</button>
+        <button className="btn btn-primary" onClick={onDone} style={{ padding: "12px 30px" }}>
+          View History & PBs
+        </button>
+        <button className="btn btn-ghost" onClick={onRetry} style={{ padding: "12px 24px" }}>
+          Do Another Set
+        </button>
       </div>
     </div>
   );
 }
 
 function formatTime(s) {
-  const m   = Math.floor(s / 60).toString().padStart(2, "0");
+  const m = Math.floor(s / 60)
+    .toString()
+    .padStart(2, "0");
   const sec = (s % 60).toString().padStart(2, "0");
   return `${m}:${sec}`;
 }

@@ -1,0 +1,44 @@
+id: vrikshasana
+name: Vrikshasana (Tree Pose)
+category: yoga
+muscle_groups: [adductors, glutes, ankles, core]
+difficulty: intermediate
+camera_view: front
+min_detection_confidence: 0.55
+required_joints: [left_knee, right_knee, left_spine]
+instructions: "Balance firmly on one leg. Place the sole of your other foot on your inner calf or thigh (never the knee joint). Bring palms together at heart center or reach overhead."
+
+phases:
+  - id: hold
+    description: Single-leg balance and hip opening
+    target_angles:
+      left_knee: { ideal: 178.0, tolerance: 8.0, weight: 0.45 }
+      right_knee: { ideal: 45.0, tolerance: 20.0, weight: 0.30 }
+      left_spine: { ideal: 178.0, tolerance: 12.0, weight: 0.25 }
+
+hold_rules:
+  hold_time_target_seconds: 20.0
+  breathing_pace_seconds: 4.0
+  pacing_guide: "Find a steady focal point. Inhale for stability, exhale to ground."
+
+form_rules:
+  - id: bent_standing_knee
+    joint: left_knee
+    condition: "left_knee < 170"
+    severity: moderate
+    feedback: "Keep your standing leg strong and straight"
+    weight: 0.45
+
+  - id: hip_collapse
+    joint: right_knee
+    condition: "right_knee > 70"
+    severity: minor
+    feedback: "Press your lifted foot into your thigh, open the hip"
+    weight: 0.30
+
+  - id: lateral_spine_lean
+    joint: left_spine
+    condition: "abs(left_spine - 178) > 12"
+    severity: moderate
+    feedback: "Lengthen your spine, avoid leaning to one side"
+    weight: 0.25

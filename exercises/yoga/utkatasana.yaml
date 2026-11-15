@@ -1,0 +1,44 @@
+id: utkatasana
+name: Utkatasana (Chair Pose)
+category: yoga
+muscle_groups: [quadriceps, glutes, calves, spinal_erectors]
+difficulty: beginner
+camera_view: side
+min_detection_confidence: 0.55
+required_joints: [left_knee, left_spine, left_shoulder]
+instructions: "Feet together or hip-width apart. Bend both knees deeply as if sitting back into an imaginary chair, shifting weight toward heels. Reach arms overhead alongside ears, spine long."
+
+phases:
+  - id: hold
+    description: Bilateral knee flexion with upright spine hinge
+    target_angles:
+      left_knee: { ideal: 115.0, tolerance: 15.0, weight: 0.35 }
+      left_spine: { ideal: 150.0, tolerance: 15.0, weight: 0.35 }
+      left_shoulder: { ideal: 170.0, tolerance: 15.0, weight: 0.30 }
+
+hold_rules:
+  hold_time_target_seconds: 15.0
+  breathing_pace_seconds: 3.5
+  pacing_guide: "Inhale, draw belly in and reach tall. Exhale, sink lower into heels."
+
+form_rules:
+  - id: shallow_squat
+    joint: left_knee
+    condition: "left_knee > 130"
+    severity: moderate
+    feedback: "Sit deeper, bend your knees more like sitting back in a chair"
+    weight: 0.35
+
+  - id: excessive_forward_slouch
+    joint: left_spine
+    condition: "left_spine < 135"
+    severity: moderate
+    feedback: "Lift your chest, keep your spine long and heart open"
+    weight: 0.35
+
+  - id: arms_dropping
+    joint: left_shoulder
+    condition: "left_shoulder < 155"
+    severity: minor
+    feedback: "Reach your arms higher alongside your ears"
+    weight: 0.30

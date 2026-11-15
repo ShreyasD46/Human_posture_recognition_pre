@@ -1,0 +1,62 @@
+id: lateral_raise
+name: Side Lateral Raise
+category: gym
+muscle_groups: [lateral_deltoids, supraspinatus, upper_traps]
+difficulty: beginner
+camera_view: front
+min_detection_confidence: 0.55
+required_joints: [left_shoulder_lateral, right_shoulder_lateral]
+instructions: "Stand tall with dumbbells in front of your thighs. Raise your arms out to the sides until your elbows are level with your shoulders (~90 degrees). Lower with control."
+
+phases:
+  - id: ready
+    description: Arms hanging at sides
+    target_angles:
+      left_shoulder_lateral: { ideal: 15.0, tolerance: 10.0, weight: 0.5 }
+      right_shoulder_lateral: { ideal: 15.0, tolerance: 10.0, weight: 0.5 }
+    transition:
+      next_phase: raising
+      condition: "left_shoulder_lateral > 30 or right_shoulder_lateral > 30"
+
+  - id: raising
+    description: Raising arms laterally
+    transition:
+      next_phase: contracted
+      condition: "left_shoulder_lateral >= 80 or right_shoulder_lateral >= 80"
+      rollback_phase: ready
+      rollback_condition: "left_shoulder_lateral < 20 and right_shoulder_lateral < 20"
+
+  - id: contracted
+    description: Arms parallel to the floor at 90 degrees
+    target_angles:
+      left_shoulder_lateral: { ideal: 88.0, tolerance: 12.0, weight: 0.5 }
+      right_shoulder_lateral: { ideal: 88.0, tolerance: 12.0, weight: 0.5 }
+    transition:
+      next_phase: lowering
+      condition: "left_shoulder_lateral < 75 or right_shoulder_lateral < 75"
+
+  - id: lowering
+    description: Controlled lowering back down
+    transition:
+      next_phase: ready
+      condition: "left_shoulder_lateral < 25 and right_shoulder_lateral < 25"
+
+rep_rules:
+  count_on_phase: ready
+  half_rep_count: false
+  min_rep_duration_seconds: 0.8
+  break_detection: true
+  break_arm_rest_angle: 20.0
+  break_countdown_seconds: 15
+  target_tempo:
+    eccentric: 2.0
+    pause: 0.5
+    concentric: 1.0
+
+form_rules:
+  - id: shrugging_traps
+    joint: left_shoulder
+    condition: "left_shoulder > 110 or right_shoulder > 110"
+    severity: moderate
+    feedback: "Fix Form: Don't raise your arms above shoulder level, avoid shrugging"
+    weight: 0.35

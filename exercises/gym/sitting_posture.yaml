@@ -1,0 +1,37 @@
+id: sitting_posture
+name: Ergonomic Sitting Posture
+category: gym
+muscle_groups: [cervical_spine, thoracic_spine, core, posture]
+difficulty: beginner
+camera_view: side
+min_detection_confidence: 0.55
+required_joints: [neck_inclination, torso_inclination]
+instructions: "Align the camera directly to your side profile. Sit upright with your back supported, ears over your shoulders, and hips back in the chair. Maintain an upright spine without slouching forward."
+
+phases:
+  - id: monitoring
+    description: Continuous ergonomic posture monitoring
+    target_angles:
+      neck_inclination: { ideal: 20.0, tolerance: 20.0, weight: 0.5 }
+      torso_inclination: { ideal: 5.0, tolerance: 10.0, weight: 0.5 }
+
+hold_rules:
+  hold_time_target_seconds: 60.0
+  breathing_pace_seconds: 4.0
+  pacing_guide: "Inhale, lengthen the back of your neck. Exhale, relax shoulders away from ears."
+  max_bad_posture_seconds: 180.0
+
+form_rules:
+  - id: forward_head_slouch
+    joint: neck_inclination
+    condition: "neck_inclination >= 40"
+    severity: major
+    feedback: "Fix Form: Draw your chin gently back, align ears over shoulders"
+    weight: 0.5
+
+  - id: torso_forward_lean
+    joint: torso_inclination
+    condition: "torso_inclination >= 12"
+    severity: major
+    feedback: "Fix Form: Sit back against your seat, avoid leaning forward"
+    weight: 0.5

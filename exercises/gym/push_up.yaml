@@ -1,0 +1,66 @@
+id: push_up
+name: Push-Up
+category: gym
+muscle_groups: [chest, triceps, anterior_deltoids, core]
+difficulty: beginner
+camera_view: side
+min_detection_confidence: 0.55
+required_joints: [left_elbow, left_shoulder, left_hip]
+instructions: "Position camera to your side. Start in a high plank with arms extended, body forming a straight line from shoulders to ankles. Lower chest until elbows reach 90 degrees, then press back up."
+
+phases:
+  - id: ready
+    description: High plank position
+    target_angles:
+      left_elbow: { ideal: 165.0, tolerance: 15.0, weight: 1.0 }
+      left_hip: { ideal: 170.0, tolerance: 15.0, weight: 1.0 }
+    transition:
+      next_phase: descending
+      condition: "left_elbow < 150"
+
+  - id: descending
+    description: Lowering chest toward floor
+    transition:
+      next_phase: bottom
+      condition: "left_elbow <= 90 and left_hip > 160"
+      rollback_phase: ready
+      rollback_condition: "left_elbow > 160"
+
+  - id: bottom
+    description: Inflection point at 90 degrees
+    target_angles:
+      left_elbow: { ideal: 85.0, tolerance: 15.0, weight: 1.0 }
+      left_hip: { ideal: 170.0, tolerance: 15.0, weight: 1.0 }
+    transition:
+      next_phase: ascending
+      condition: "left_elbow > 100"
+
+  - id: ascending
+    description: Pressing back up
+    transition:
+      next_phase: ready
+      condition: "left_elbow > 160 and left_shoulder > 40 and left_hip > 160"
+
+rep_rules:
+  count_on_phase: completed
+  half_rep_count: true
+  min_rep_duration_seconds: 0.6
+  target_tempo:
+    eccentric: 2.0
+    pause: 0.3
+    concentric: 1.0
+
+form_rules:
+  - id: sagging_hips
+    joint: left_hip
+    condition: "left_hip <= 160"
+    severity: major
+    feedback: "Fix Form: Keep your hips raised and core engaged"
+    weight: 0.4
+
+  - id: flared_shoulders
+    joint: left_shoulder
+    condition: "left_shoulder <= 40"
+    severity: moderate
+    feedback: "Fix Form: Keep your shoulders engaged and back flat"
+    weight: 0.3

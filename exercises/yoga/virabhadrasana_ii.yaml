@@ -1,0 +1,44 @@
+id: virabhadrasana_ii
+name: Virabhadrasana II (Warrior II)
+category: yoga
+muscle_groups: [quadriceps, glutes, adductors, deltoids]
+difficulty: intermediate
+camera_view: front
+min_detection_confidence: 0.55
+required_joints: [left_knee, right_knee, left_shoulder]
+instructions: "Step feet wide. Bend front knee directly over ankle to a right angle (90 degrees). Straighten back leg firmly. Extend both arms parallel to the floor, gazing forward."
+
+phases:
+  - id: hold
+    description: Front knee 90 degree flexion with horizontal arm span
+    target_angles:
+      left_knee: { ideal: 90.0, tolerance: 15.0, weight: 0.40 }
+      right_knee: { ideal: 175.0, tolerance: 10.0, weight: 0.30 }
+      left_shoulder: { ideal: 178.0, tolerance: 12.0, weight: 0.30 }
+
+hold_rules:
+  hold_time_target_seconds: 20.0
+  breathing_pace_seconds: 4.0
+  pacing_guide: "Inhale, lengthen through both arms. Exhale, sink hips lower without collapsing knee."
+
+form_rules:
+  - id: shallow_knee_bend
+    joint: left_knee
+    condition: "left_knee > 105"
+    severity: moderate
+    feedback: "Bend your front knee deeper toward a right angle over the ankle"
+    weight: 0.40
+
+  - id: soft_back_knee
+    joint: right_knee
+    condition: "right_knee < 165"
+    severity: minor
+    feedback: "Straighten your back leg fully, press into outer edge of foot"
+    weight: 0.30
+
+  - id: drooping_arms
+    joint: left_shoulder
+    condition: "left_shoulder < 166"
+    severity: minor
+    feedback: "Extend both arms level, reach through your fingertips"
+    weight: 0.30

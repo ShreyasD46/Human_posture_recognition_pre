@@ -1,0 +1,44 @@
+id: trikonasana
+name: Trikonasana (Triangle Pose)
+category: yoga
+muscle_groups: [hamstrings, groins, hips, obliques, shoulders]
+difficulty: intermediate
+camera_view: front
+min_detection_confidence: 0.55
+required_joints: [left_knee, left_spine, left_shoulder]
+instructions: "Step feet wide apart. Turn front foot forward 90 degrees. Extend arms parallel to floor, hinge at the front hip crease, reaching down toward shin while opposite arm reaches vertically skyward."
+
+phases:
+  - id: hold
+    description: Lateral hip hinge with stacked vertical arms
+    target_angles:
+      left_knee: { ideal: 175.0, tolerance: 10.0, weight: 0.35 }
+      left_spine: { ideal: 100.0, tolerance: 15.0, weight: 0.35 }
+      left_shoulder: { ideal: 175.0, tolerance: 15.0, weight: 0.30 }
+
+hold_rules:
+  hold_time_target_seconds: 15.0
+  breathing_pace_seconds: 4.0
+  pacing_guide: "Inhale, expand across your collarbones. Exhale, revolve chest gently toward ceiling."
+
+form_rules:
+  - id: bent_front_knee
+    joint: left_knee
+    condition: "left_knee < 165"
+    severity: moderate
+    feedback: "Keep your front leg straight, don't bend the knee"
+    weight: 0.35
+
+  - id: shallow_hinge
+    joint: left_spine
+    condition: "left_spine > 115"
+    severity: moderate
+    feedback: "Hinge deeper from your hip, lengthen both sides of your waist"
+    weight: 0.35
+
+  - id: collapsed_chest
+    joint: left_shoulder
+    condition: "left_shoulder < 160"
+    severity: minor
+    feedback: "Stack your top arm straight up, open your chest"
+    weight: 0.30

@@ -1,0 +1,68 @@
+id: bicep_curl
+name: Dumbbell Bicep Curl
+category: gym
+muscle_groups: [biceps, brachialis, forearms]
+difficulty: beginner
+camera_view: front
+min_detection_confidence: 0.55
+required_joints: [left_elbow, left_shoulder]
+instructions: "Stand tall with dumbbells at your sides. Keeping your upper arms pinned to your ribs, curl the weight up until your forearm is almost vertical (under 30 degrees), then lower under control."
+
+phases:
+  - id: ready
+    description: Arms fully extended at side
+    target_angles:
+      left_elbow: { ideal: 168.0, tolerance: 12.0, weight: 1.0 }
+    transition:
+      next_phase: curling
+      condition: "left_elbow < 140"
+
+  - id: curling
+    description: Lifting weight upward
+    transition:
+      next_phase: contracted
+      condition: "left_elbow < 35"
+      rollback_phase: ready
+      rollback_condition: "left_elbow > 155"
+
+  - id: contracted
+    description: Peak bicep squeeze
+    target_angles:
+      left_elbow: { ideal: 30.0, tolerance: 15.0, weight: 1.0 }
+    transition:
+      next_phase: lowering
+      condition: "left_elbow > 45"
+
+  - id: lowering
+    description: Controlled eccentric lowering
+    transition:
+      next_phase: ready
+      condition: "left_elbow > 160"
+
+rep_rules:
+  count_on_phase: ready
+  half_rep_count: false
+  min_rep_duration_seconds: 0.7
+  break_detection: true
+  break_arm_rest_angle: 165.0
+  break_countdown_seconds: 15
+  target_tempo:
+    eccentric: 2.5
+    pause: 0.5
+    concentric: 1.0
+
+form_rules:
+  - id: elbow_drift
+    joint: left_shoulder
+    condition: "left_shoulder > 45"
+    severity: moderate
+    feedback: "Fix Form: Keep your elbows pinned to your sides, don't swing"
+    weight: 0.35
+
+  - id: incomplete_extension
+    joint: left_elbow
+    phase: ready
+    condition: "left_elbow < 155"
+    severity: minor
+    feedback: "Extend your arm fully at the bottom"
+    weight: 0.25

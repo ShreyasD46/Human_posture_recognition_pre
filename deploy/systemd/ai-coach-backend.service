@@ -1,0 +1,28 @@
+[Unit]
+Description=AI Fitness Coach Edge Backend Service
+After=network.target local-fs.target sound.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/opt/yoga-app/backend
+Environment=PYTHONUNBUFFERED=1
+Environment=PORT=5001
+Environment=HOST=0.0.0.0
+Environment=ENABLE_PI_CAMERA=1
+ExecStart=/opt/yoga-app/backend/venv/bin/python app.py
+Restart=always
+RestartSec=3
+KillMode=process
+TimeoutStopSec=10
+LimitNOFILE=65535
+
+# Security hardening
+ProtectSystem=full
+ProtectHome=read-only
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
