@@ -1,176 +1,129 @@
-# Sthira — Real-Time AI Yoga Posture Recognition & Biomechanical Correction
+# Sthira — Industry-Grade AI Fitness Coaching Kiosk
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
-[![React](https://img.shields.io/badge/React-18-61dafb.svg)](https://reactjs.org/)
-[![Vite](https://img.shields.io/badge/Vite-5.0+-646cff.svg)](https://vitejs.dev/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://reactjs.org/)
+[![FastAPI / Flask-SocketIO](https://img.shields.io/badge/Flask--SocketIO-WebSocket-green.svg)](https://flask-socketio.readthedocs.io/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi%204B%20%7C%20x86-lightgrey.svg)]()
 
-> **Sthira** (*Sanskrit: स्थिर - steady, stable, resolute*) is an intelligent, privacy-preserving yoga posture evaluation platform. It couples edge-computed 33-keypoint pose estimation with **Sthira-PhysGNN**—a Physics-Informed Spatio-Temporal Graph Neural Network—and an explainable biomechanical rule engine to deliver real-time voice coaching, joint-angle alignment, and automated post-session analytics.
+> **Sthira** (*Sanskrit: स्थिर — steady, stable, resolute*) is a commercial, edge-native AI fitness coaching
+> kiosk that runs fully on a **Raspberry Pi 4B** with a camera and display. It covers both
+> **Gym** (rep-counting, tempo, form scoring) and **Yoga** (hold timer, alignment, breathing)
+> in a single unified platform sold to gyms and training institutes.
 
 ---
 
 ## 🌟 Key Highlights
 
-- **🔒 Privacy-First Edge Estimation:** Raw video frames never leave the client browser. Video is processed locally via MediaPipe BlazePose, streaming only lightweight coordinate vectors (33 keypoints) to the backend.
-- **🧠 Sthira-PhysGNN Refinement:** Novel hybrid architecture combining Spatial-Temporal Graph Convolutional Networks (ST-GCN), dynamic self-attention, and biomechanical physics loss constraints (bone-length invariance, orthopedic Range of Motion limits, temporal jerk regularization).
-- **⚡ Sub-25ms End-to-End Latency:** High-throughput WebSocket pipeline delivering live feedback at 30+ FPS.
-- **🗣️ Natural Voice Coaching:** Real-time, debounced voice corrections with positive reinforcement cues using the browser's Web Speech API.
-- **📊 Comprehensive Session Reports:** Post-session clinical breakdown powered by an AI agent (Claude with deterministic fallback) plus automated vector PDF export.
-- **✨ Awwwards-Inspired Interface:** Minimalist dark-mode design with interactive canvas skeleton overlays, real-time angle gauges, progress analytics, and animated pose demos.
+| Feature | Detail |
+|---|---|
+| 🏋️ **Gym + Yoga** | 10 exercises across both categories, fully extensible via YAML plugins |
+| 👻 **Ghost Skeleton** | Translucent reference form retargeted to the user's own body proportions |
+| 🎨 **Color-Coded Joints** | Green / Amber / Red live bone overlay — readable from 3 m |
+| 🧮 **Rep FSM + Form Scorer** | Hysteresis state machine, 0–100 form score, per-rep records |
+| 👥 **Multi-User Kiosk** | PIN / QR login, Argon2id hashing, Role RBAC (Member / Trainer / Admin) |
+| 📊 **AI Session Summary** | Offline deterministic + optional cloud LLM bridge |
+| 🔒 **Privacy-First** | No video stored; only 33 landmark coordinates sent over WebSocket |
+| ⚡ **Pi 4B Optimised** | TFLite + XNNPACK, threaded pipeline, <150 ms latency, 20+ FPS target |
 
 ---
 
-## 🔬 Benchmark Results (Sthira-PhysGNN vs. BlazePose)
-
-Evaluated across multi-view sequence replays with synthetic noise and joint occlusions:
-
-| Metric | Stock MediaPipe BlazePose | **Sthira-PhysGNN (Ours)** | Relative Improvement |
-| :--- | :---: | :---: | :---: |
-| **MPJPE (Mean Per-Joint Pos. Error)** | 42.1 mm | **28.4 mm** | **+32.6%** |
-| **Temporal Jitter ($\times 10^{-4}$)** | 13.31 | **3.07** | **+76.9%** |
-| **Bone Length Variation Error** | 6.7% | **4.5%** | **+32.0%** |
-| **Occlusion Error (Partial Dropout)** | 112.2 mm | **48.1 mm** | **+57.1%** |
-
-*(Detailed LaTeX publication tables and methodology are available in [`backend/ml/benchmark_results.tex`](backend/ml/benchmark_results.tex) and [`Sthira_PhysGNN_Technical_Report.pdf`](Sthira_PhysGNN_Technical_Report.pdf)).*
-
----
-
-## 🏗️ System Architecture
+## 🏗️ Architecture
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                   CLIENT (React + Vite)                │
-│  Webcam Stream (60 FPS)                                │
-│       │                                                │
-│       ▼                                                │
-│  MediaPipe BlazePose (Client-side 33 landmarks)        │
-│       │                                                │
-│       ├─► Local Skeleton Canvas Overlay (Instant UI)   │
-│       └─► WebSocket: {landmarks, pose, timestamp}      │
-└──────────────────────────┬─────────────────────────────┘
-                           │  WebSocket (<15ms transit)
-┌──────────────────────────▼─────────────────────────────┐
-│                   SERVER (Flask + PyTorch)             │
-│                                                        │
-│  1. Sthira-PhysGNN Neural Filter                       │
-│     ├── ST-GCN Spatial Convolutions (Bone Adjacency)   │
-│     ├── Dynamic Attention Adjacency                    │
-│     └── Physics Loss Refinement (Kinematic Limits)     │
-│                                                        │
-│  2. Deterministic Biomechanical Rule Engine            │
-│     ├── 3D Vector Angle Computation                    │
-│     ├── Tolerances & Per-Pose Target Check             │
-│     └── Temporal Debouncing & Voice Cooldown           │
-│                                                        │
-│  3. Real-Time Feedback Dispatch                        │
-│     └── WebSocket Out: {status, score, errors, speak}  │
-└──────────────────────────┬─────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│              CLIENT  (React 18 + Vite + TypeScript)           │
+│  Webcam → MediaPipe BlazePose WASM → 33 landmarks             │
+│  Canvas: User skeleton (color-coded) + Ghost skeleton (dashed)│
+│  HUD: Reps · Sets · Phase · Form Score ring · Hold Timer      │
+└──────────────────────────┬────────────────────────────────────┘
+                           │  WebSocket (landmarks + metadata)
+┌──────────────────────────▼────────────────────────────────────┐
+│              BACKEND  (Flask-SocketIO, Python 3.11)           │
+│  PoseEvaluator ──► ExerciseRegistry (YAML plugins)            │
+│  RepFSM ──► FormScorer ──► GhostRetargeter                    │
+│  SessionStats ──► ReportAgent (offline ± LLM)                 │
+│  SQLAlchemy (SQLite WAL) ──► User / Session / RepRecord       │
+└──────────────────────────┬────────────────────────────────────┘
                            │
-┌──────────────────────────▼─────────────────────────────┐
-│                 POST-SESSION REPORTING                 │
-│  • Aggregated Biomechanical Telemetry                  │
-│  • AI Summary & Injury Risk Analysis (Claude / Fallback)│
-│  • Exportable Vector PDF Report                        │
-│  • SQLite / SQLAlchemy Persistent History              │
-└────────────────────────────────────────────────────────┘
+┌──────────────────────────▼────────────────────────────────────┐
+│              CORE ENGINE  (pure Python, Pi 4B ready)          │
+│  core/math/angles.py      · core/filters/one_euro.py         │
+│  core/engine/fsm.py       · core/engine/hold_timer.py        │
+│  core/scoring/form_scorer.py · core/ghost/retargeting.py     │
+│  core/camera/pipeline.py  · core/pose/base.py (TFLite stub)  │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🧘 Supported Pose Library
+## 🏋️ Exercise Library
 
-| Pose (Sanskrit) | Common Name | Key Evaluated Joints & Biomechanics |
-| :--- | :--- | :--- |
-| **Tadasana** | Mountain Pose | Spine alignment, knee extension ($170^{\circ}-180^{\circ}$), shoulder leveling |
-| **Vrikshasana** | Tree Pose | Standing leg stability, bent knee abduction ($60^{\circ}-110^{\circ}$), hands overhead |
-| **Trikonasana** | Triangle Pose | Front leg extension, torso lateral flexion, vertical arm alignment ($170^{\circ}-180^{\circ}$) |
-| **Virabhadrasana II** | Warrior II | Front knee flexion ($85^{\circ}-105^{\circ}$), horizontal arm extension, torso verticality |
-| **Utkatasana** | Chair Pose | Bilateral knee flexion ($80^{\circ}-110^{\circ}$), hip hinge, arm elevation ($150^{\circ}-180^{\circ}$) |
+### Gym Category
+| Exercise | Tracking |
+|---|---|
+| Push-Up | Elbow angle FSM, half-rep detection |
+| Bench Press | Bilateral elbow angle |
+| Bicep Curl | Elbow 150°→40° phases, break detection |
+| Lateral Raise | Shoulder abduction 10°→80° |
+| Sitting Posture | Isometric hold with spine alignment |
 
-*Reference configurations and joint tolerance angles are located in [`backend/data/poses.py`](backend/data/poses.py).*
+### Yoga Category
+| Pose | Tracking |
+|---|---|
+| Tadasana | Spine verticality, knee extension |
+| Vrikshasana | Standing-leg stability, raised-knee abduction |
+| Trikonasana | Lateral torso flexion, arm alignment |
+| Virabhadrasana II | Front knee flexion, horizontal arms |
+| Utkatasana | Bilateral knee bend, arm elevation |
+
+> Add new exercises by dropping a YAML file in `exercises/gym/` or `exercises/yoga/` — no Python required.
+> See [`docs/ADDING_NEW_EXERCISES.md`](docs/ADDING_NEW_EXERCISES.md).
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quick Start (Development)
 
 ### Prerequisites
-- **Python 3.10+**
-- **Node.js 18+** & `npm`
-- Webcam for real-time video capture
+- Python 3.11+
+- Node.js 18+ & npm
+- Webcam
 
----
-
-### 1. Backend Setup
+### 1 · Backend
 
 ```bash
-# Navigate to backend directory
 cd backend
-
-# Create and activate virtual environment
 python -m venv venv
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows (PowerShell):
+# Windows:
 .\venv\Scripts\Activate.ps1
+# Linux / macOS:
+source venv/bin/activate
 
-# Install dependencies
 pip install -r requirements.txt
-
-# Configure environment variables
-cp .env.example .env
-# Optional: add your ANTHROPIC_API_KEY for Claude-powered session reports
-
-# Launch Flask-SocketIO backend (runs on http://localhost:5001)
-python app.py
+python app.py          # → http://localhost:5001
 ```
 
----
-
-### 2. Frontend Setup
+### 2 · Frontend
 
 ```bash
-# Navigate to frontend directory
-cd frontend
-
-# Install dependencies
-npm install
-
-# Configure environment variables
-cp .env.example .env
-
-# Start Vite development server (runs on http://localhost:5173)
-npm run dev
+npm --prefix frontend install
+npm --prefix frontend run dev  # → http://localhost:5173
 ```
 
----
+### 3 · Open
 
-### 3. Usage Flow
-
-1. Open **`http://localhost:5173`** in your browser.
-2. Sign up or log in with your credentials.
-3. Select a pose from the **Practice Library**.
-4. Allow webcam access. Stand back until your full body (shoulders to feet) is visible in the frame.
-5. Auto-calibration will lock onto your form and begin real-time posture tracking and audio guidance.
-6. Click **End Session** to review your posture score, stability metrics, joint accuracy breakdowns, and download your clinical session PDF.
+Navigate to **http://localhost:5173** → Sign up → Pick Gym or Yoga → Start training.
 
 ---
 
-## 🧪 Testing & Benchmarks
-
-Run the test and evaluation suites from the `backend/` directory:
+## 🧪 Tests
 
 ```bash
-cd backend
+# Full suite (25 tests)
+backend/venv/Scripts/python.exe -m pytest tests/ backend/tests/ -v
 
-# Run rule engine validation tests
-python -m unittest tests/test_rule_engine.py
-
-# Run PhysGNN ablation benchmark comparison
-python tests/benchmark_ablation.py
-
-# Run temporal replay evaluation
-python tests/replay_eval.py
+# Benchmark (FPS, latency, CPU, RAM, temperature)
+make benchmark
 ```
 
 ---
@@ -179,52 +132,98 @@ python tests/replay_eval.py
 
 ```
 yoga-app/
-├── Sthira_PhysGNN_Technical_Report.pdf  # Comprehensive technical and research report
-├── backend/
-│   ├── app.py                          # Flask & WebSocket application entrypoint
-│   ├── auth.py                         # JWT user authentication & session routes
-│   ├── models.py                       # SQLAlchemy database models
-│   ├── pose_engine.py                  # Real-time stateful pose evaluator
-│   ├── scoring.py                      # Joint angle math & tolerance scoring
-│   ├── session_stats.py                # Telemetry aggregator
-│   ├── report_agent.py                 # Post-session LLM analysis agent
-│   ├── generate_report_pdf.py          # PDF generation engine
-│   ├── sthira_physgnn_best.pt          # Pretrained Sthira-PhysGNN PyTorch weights
-│   ├── data/
-│   │   ├── poses.py                    # Target angles, tolerances & audio cues
-│   │   └── landmark_map.py             # MediaPipe 33 keypoint definitions
-│   ├── ml/
-│   │   ├── biomechanics.py             # Anatomical bone trees & orthopedic ROM bounds
-│   │   ├── pytorch_model.py            # ST-GCN + Attention PhysGNN architecture
-│   │   ├── pytorch_losses.py           # Physics-informed loss formulation
-│   │   ├── pytorch_train.py            # Training loop with biomechanical regularization
-│   │   └── benchmark_results.tex       # LaTeX ablation table
-│   └── tests/
-│       ├── test_rule_engine.py         # Unit tests for scoring & edge cases
-│       └── benchmark_ablation.py       # Ablation evaluation scripts
+├── core/                        # Pi 4B–ready inference engine
+│   ├── math/angles.py
+│   ├── filters/                 # One-Euro landmark smoother
+│   ├── engine/                  # RepFSM + HoldTimer
+│   ├── scoring/form_scorer.py
+│   ├── ghost/retargeting.py     # Ghost skeleton generator
+│   ├── camera/pipeline.py       # Threaded zero-lag camera pipeline
+│   └── pose/base.py             # PoseEstimator ABC + TFLite stub
 │
-└── frontend/
-    ├── src/
-    │   ├── App.jsx                     # Route definitions & navigation
-    │   ├── components/
-    │   │   ├── CameraView.jsx          # MediaPipe camera capture & canvas overlay
-    │   │   ├── SessionView.jsx         # Live HUD, feedback counters & controls
-    │   │   ├── PosePicker.jsx          # Visual pose catalog
-    │   │   ├── PoseDemo.jsx            # Interactive pose reference visualizer
-    │   │   ├── Dashboard.jsx           # Analytics, session history & metrics
-    │   │   ├── AuthPage.jsx            # Authentication interface
-    │   │   └── Landing.jsx             # Product landing experience
-    │   ├── hooks/
-    │   │   ├── usePoseDetection.js     # MediaPipe lifecycle hook
-    │   │   └── useVoiceFeedback.js     # Web Speech synthesis hook
-    │   └── services/
-    │       ├── socket.js               # WebSocket client connection
-    │       └── api.js                  # Axios HTTP client
-    └── package.json
+├── exercises/
+│   ├── registry.py              # YAML plugin loader
+│   ├── gym/                     # push_up, bench_press, bicep_curl …
+│   └── yoga/                    # tadasana, vrikshasana, trikonasana …
+│
+├── backend/
+│   ├── app.py                   # Flask-SocketIO entrypoint
+│   ├── auth.py                  # JWT + Argon2id + RBAC
+│   ├── models.py                # User / Session / RepRecord / ExerciseSet
+│   ├── pose_engine.py           # PoseEvaluator (dual yoga+gym paths)
+│   ├── report_agent.py          # Offline summary + optional LLM bridge
+│   └── session_stats.py        # Telemetry aggregator
+│
+├── frontend/src/
+│   ├── components/
+│   │   ├── Landing.jsx          # Product landing (Gym + Yoga)
+│   │   ├── AuthPage.jsx         # Password + PIN login
+│   │   ├── PosePicker.jsx       # Exercise catalog with category filter
+│   │   ├── SessionView.jsx      # Live HUD (reps / hold / form score)
+│   │   ├── CameraView.jsx       # Dual skeleton canvas (user + ghost)
+│   │   └── Dashboard.jsx        # Progress with gym/yoga filter
+│   └── services/api.js
+│
+├── tests/
+│   ├── regression/              # Exercise plugin regression tests
+│   └── replay/                  # Video replay tests
+│
+├── deploy/
+│   ├── install.sh               # One-line Pi installer
+│   ├── systemd/                 # ai-coach-backend.service + kiosk.service
+│   └── scripts/benchmark.py     # make benchmark
+│
+├── docs/
+│   ├── AUDIT.md
+│   ├── ARCHITECTURE.md
+│   ├── HARDWARE_BOM.md
+│   ├── USER_GUIDE.md
+│   ├── ADMIN_GUIDE.md
+│   ├── ROADMAP.md
+│   └── ADDING_NEW_EXERCISES.md
+│
+└── vendor/gym_legacy/           # Original AI_Gym_trainer repo (reference)
 ```
+
+---
+
+## 🍓 Raspberry Pi 4B Deployment
+
+```bash
+# On Pi OS 64-bit (Bookworm), Python 3.11
+curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/sthira/main/deploy/install.sh | bash
+
+# Then visit the first-boot wizard at http://<pi-ip>:5001/setup
+```
+
+See [`docs/HARDWARE_BOM.md`](docs/HARDWARE_BOM.md) for the full camera/mount/lighting bill of materials.
+
+Production stack:
+- Backend: Flask-SocketIO behind **Gunicorn + eventlet** (systemd)
+- Frontend: **Chromium kiosk mode** at 720p (systemd)
+- Inference: **TFLite + XNNPACK** via MediaPipe Pose Lite (ARM64 wheel)
+- Camera: **Picamera2** (CSI) or OpenCV V4L2 (USB webcam)
+
+---
+
+## 🔐 Security
+
+- Passwords & PINs: **Argon2id** hashing (`argon2-cffi`)
+- Sessions: **JWT** (HS256), stored in `localStorage`
+- CORS: configurable via `CORS_ORIGIN` env var
+- Admin panel: local-network-only by default
+- No hardcoded secrets — use `.env`
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT — see [LICENSE](LICENSE).
+
+---
+
+## 🗺️ Roadmap
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for planned features:
+multi-camera support, wearable integration, cloud sync dashboard,
+per-rep video clip opt-in, leaderboard/challenges, and more.

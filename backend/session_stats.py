@@ -5,6 +5,7 @@ Computes volume, asymmetry, tempo consistency, fatigue drop-off, and personal be
 from collections import Counter
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import numpy as np
 from models import db, Session, SessionError, ExerciseSet, RepRecord
 
 
@@ -37,7 +38,7 @@ def aggregate_session(
     tempo_consistency = 90.0
     if rep_records and len(rep_records) >= 3:
         durations = [r.get("duration_seconds", 1.0) for r in rep_records]
-        std_dur = float(np.std(durations)) if "np" in globals() else 0.4
+        std_dur = float(np.std(durations))
         tempo_consistency = max(50.0, min(100.0, 100.0 - std_dur * 20.0))
 
     # Left / Right Asymmetry check
