@@ -7,94 +7,204 @@ import { useVoiceFeedback } from "../hooks/useVoiceFeedback.js";
 import { api } from "../services/api.js";
 import "./SessionView.css";
 
+/* ── Score ring ──────────────────────────────────────── */
+function ScoreRing({ score }) {
+  const clamp  = Math.max(0, Math.min(100, score ?? 0));
+  const color  = clamp >= 80 ? "var(--green)" : clamp >= 50 ? "var(--amber)" : "var(--red)";
+  const r      = 22;
+  const circ   = 2 * Math.PI * r;
+  const filled = (clamp / 100) * circ;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <svg width="56" height="56" viewBox="0 0 56 56">
+        <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
+        <circle
+          cx="28" cy="28" r={r} fill="none"
+          stroke={color} strokeWidth="5" strokeLinecap="round"
+          strokeDasharray={`${filled} ${circ}`}
+          strokeDashoffset={circ * 0.25}
+          style={{ transition: "stroke-dasharray 0.4s ease, stroke 0.4s ease" }}
+        />
+      </svg>
+      <div>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 900, color, lineHeight: 1 }}>
+          {Math.round(clamp)}
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-3)", textTransform: "uppercase" }}>
+          form
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── HUD metric card ─────────────────────────────────── */
+function HudCard({ label, value, unit, color = "var(--text)", accent, pulse }) {
+  return (
+    <div className="hud-card" style={{ borderColor: accent ? `${color}33` : undefined }}>
+      <div className="hud-label">{label}</div>
+      <div className="hud-value" style={{ color, fontSize: typeof value === "string" && value.length > 5 ? 28 : 44 }}>
+        {pulse ? (
+          <span style={{ animation: "pulse-dot 1.5s ease infinite", display: "inline-block" }}>{value}</span>
+        ) : value}
+        {unit && <span style={{ fontSize: 18, fontWeight: 500, color: "var(--text-3)", marginLeft: 4 }}>{unit}</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ── Session summary screen ──────────────────────────── */
+function SessionSummary({ summary, onDone, onRetry }) {
+  if (!summary) return null;
+  const isGym = summary.category === "gym";
+  const score = summary.avg_score ?? summary.accuracy_pct ?? 0;
+  const scoreColor = score >= 80 ? "var(--green)" : score >= 50 ? "var(--amber)" : "var(--red)";
+
+  return (
+    <div style={{ maxWidth: 760, margin: "40px auto", padding: "0 20px" }}>
+      <div className="card summary-card" style={{ padding: "36px 40px" }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
+              color: isGym ? "var(--gym)" : "var(--yoga)", marginBottom: 8 }}>
+              {isGym ? "🏋️ Gym Workout" : "🧘 Yoga Session"} · Complete
+            </div>
+            <h2 style={{ fontSize: 32, margin: 0, fontWeight: 900 }}>Session Complete! 🏅</h2>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 48, fontWeight: 900, color: scoreColor, lineHeight: 1 }}>
+              {Math.round(score)}
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-3)", textTransform: "uppercase" }}>
+              avg score
+            </div>
+          </div>
+        </div>
+
+        {/* AI summary text */}
+        {summary.summary && (
+          <p style={{ color: "var(--text-2)", fontSize: 16, lineHeight: 1.7, marginBottom: 28,
+            padding: "16px 20px", background: "var(--bg-2)", borderRadius: "var(--r-md)", borderLeft: "3px solid var(--brand)" }}>
+            {summary.summary}
+          </p>
+        )}
+
+        {/* Stat grid */}
+        <div className="summary-stats">
+          {isGym ? (
+            <div style={{ textAlign: "center", padding: "16px", background: "var(--bg-2)", borderRadius: "var(--r-md)" }}>
+              <div className="stat-num" style={{ color: "var(--gym)" }}>{summary.total_reps ?? 0}</div>
+              <div className="stat-cap">Total Reps</div>
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", padding: "16px", background: "var(--bg-2)", borderRadius: "var(--r-md)" }}>
+              <div className="stat-num" style={{ color: "var(--yoga)" }}>{Math.round(summary.hold_time_seconds ?? 0)}s</div>
+              <div className="stat-cap">Hold Time</div>
+            </div>
+          )}
+          <div style={{ textAlign: "center", padding: "16px", background: "var(--bg-2)", borderRadius: "var(--r-md)" }}>
+            <div className="stat-num" style={{ color: scoreColor }}>{Math.round(score)}%</div>
+            <div className="stat-cap">Form Score</div>
+          </div>
+          <div style={{ textAlign: "center", padding: "16px", background: "var(--bg-2)", borderRadius: "var(--r-md)" }}>
+            <div className="stat-num" style={{ color: "var(--yoga)" }}>
+              {summary.score_trend > 0 ? `+${summary.score_trend}` : summary.score_trend ?? "—"}
+            </div>
+            <div className="stat-cap">Momentum</div>
+          </div>
+        </div>
+
+        {/* Tips */}
+        {summary.tips?.length > 0 && (
+          <div style={{ marginBottom: 28 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 800, marginBottom: 12, color: "var(--text-2)",
+              textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 12 }}>
+              🤖 AI Coach Recommendations
+            </h3>
+            <ul className="tip-list">
+              {summary.tips.map((t, i) => <li key={i}>{t}</li>)}
+            </ul>
+          </div>
+        )}
+
+        {summary.caveat && <p className="clinical-caveat">{summary.caveat}</p>}
+
+        {/* CTA */}
+        <div className="controls-row" style={{ marginTop: 8 }}>
+          <button className="btn btn-primary" onClick={onDone} style={{ flex: 1, padding: "14px" }}>
+            View Progress →
+          </button>
+          <button className="btn btn-ghost" onClick={onRetry} style={{ flex: 1, padding: "14px" }}>
+            🔁 Another Set
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main SessionView ────────────────────────────────── */
 export default function SessionView() {
   const { poseId } = useParams();
-  const navigate = useNavigate();
+  const navigate   = useNavigate();
   const { speakNow, speakAll, cancel } = useVoiceFeedback();
 
-  const [phase, setPhase] = useState("demo"); // "demo" | "calibrating" | "monitoring" | "complete"
+  const [phase, setPhase]           = useState("demo");
   const [exerciseInfo, setExerciseInfo] = useState(null);
-  const [feedback, setFeedback] = useState(null);
-  const [summary, setSummary] = useState(null);
-  const [elapsed, setElapsed] = useState(0);
-  const [visibleOk, setVisibleOk] = useState(false);
+  const [feedback, setFeedback]     = useState(null);
+  const [summary, setSummary]       = useState(null);
+  const [elapsed, setElapsed]       = useState(0);
+  const [visibleOk, setVisibleOk]   = useState(false);
   const [cameraDenied, setCameraDenied] = useState(false);
-  const [category, setCategory] = useState("gym");
+  const [category, setCategory]     = useState("gym");
+  const [voiceMode, setVoiceMode]   = useState("default");
+  const [toastMsg, setToastMsg]     = useState(null);
 
-  // Architecture toggle
-  const [enablePhysGNN, setEnablePhysGNN] = useState(true);
-  const [voiceMode, setVoiceMode] = useState("default");
-
-  const [toastMsg, setToastMsg] = useState(null);
-  const toastTimerRef = useRef(null);
-
-  const socketRef = useRef(null);
-  const timerRef = useRef(null);
+  const socketRef           = useRef(null);
+  const timerRef            = useRef(null);
   const calibrationStreakRef = useRef(0);
-  const spokenIntroRef = useRef(false);
-  const phaseRef = useRef(phase);
+  const spokenIntroRef      = useRef(false);
+  const phaseRef            = useRef(phase);
+  const toastTimerRef       = useRef(null);
 
-  useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   useEffect(() => {
     api.exercise(poseId)
-      .then((data) => {
-        setExerciseInfo(data);
-        if (data.category) setCategory(data.category);
-      })
-      .catch(() => {
-        // Fallback to poses API
+      .then((d) => { setExerciseInfo(d); if (d.category) setCategory(d.category); })
+      .catch(() =>
         api.poses().then((list) => {
           const found = list.find((p) => p.id === poseId);
-          if (found) {
-            setExerciseInfo(found);
-            setCategory("yoga");
-          }
-        });
-      });
+          if (found) { setExerciseInfo(found); setCategory("yoga"); }
+        })
+      );
   }, [poseId]);
 
   useEffect(() => {
     const socket = connectSocket();
     socketRef.current = socket;
 
-    socket.on("session_started", (data) => {
+    socket.on("session_started", (d) => {
       setPhase("monitoring");
-      if (data?.category) setCategory(data.category);
+      if (d?.category) setCategory(d.category);
       timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
     });
-
-    socket.on("feedback", (data) => {
-      setFeedback(data);
-      if (data.speak?.length) {
-        speakAll(data.speak);
-        showToast(data.speak[0]);
-      }
+    socket.on("feedback", (d) => {
+      setFeedback(d);
+      if (d.speak?.length) { speakAll(d.speak); showToast(d.speak[0]); }
     });
-
-    socket.on("session_summary", (data) => {
-      setSummary(data);
-      setPhase("complete");
-    });
-
-    socket.on("session_error", (data) => console.warn(data.message));
-
+    socket.on("session_summary", (d) => { setSummary(d); setPhase("complete"); });
+    socket.on("session_error",   (d) => console.warn(d.message));
     socket.on("reconnect", () => {
-      if (phaseRef.current === "monitoring") {
+      if (phaseRef.current === "monitoring")
         socket.emit("start_session", { exercise_id: poseId, pose_name: poseId, voice_mode: voiceMode });
-      }
     });
 
     return () => {
       clearInterval(timerRef.current);
       cancel();
-      socket.off("session_started");
-      socket.off("feedback");
-      socket.off("session_summary");
-      socket.off("session_error");
-      socket.off("reconnect");
+      ["session_started","feedback","session_summary","session_error","reconnect"].forEach((e) => socket.off(e));
       disconnectSocket();
     };
   }, []);
@@ -106,235 +216,217 @@ export default function SessionView() {
     toastTimerRef.current = setTimeout(() => setToastMsg(null), 3200);
   }, []);
 
-  const handleFrame = (landmarks, visible, err, capturedAt) => {
-    if (err === "camera-denied") {
-      setCameraDenied(true);
-      return;
-    }
+  const handleFrame = (landmarks, visible, err) => {
+    if (err === "camera-denied") { setCameraDenied(true); return; }
     setVisibleOk(visible);
-
     if (phaseRef.current === "calibrating") {
       calibrationStreakRef.current = visible ? calibrationStreakRef.current + 1 : 0;
-      if (calibrationStreakRef.current >= 20) {
-        startSession();
-      }
+      if (calibrationStreakRef.current >= 20) startSession();
       return;
     }
-
-    if (phaseRef.current === "monitoring" && landmarks) {
-      socketRef.current.emit("frame", { landmarks, capturedAt, enable_physgnn: enablePhysGNN });
-    }
+    if (phaseRef.current === "monitoring" && landmarks)
+      socketRef.current.emit("frame", { landmarks, capturedAt: performance.now() });
   };
 
   const startSession = () => {
     if (!spokenIntroRef.current) {
       spokenIntroRef.current = true;
-      const title = exerciseInfo?.name || exerciseInfo?.label || "your workout";
-      speakNow(`Starting ${title}. Maintain steady form and follow the reference ghost.`);
+      speakNow(`Starting ${exerciseInfo?.name ?? "workout"}. Follow the ghost reference.`);
     }
-    socketRef.current.emit("start_session", {
-      exercise_id: poseId,
-      pose_name: poseId,
-      voice_mode: voiceMode,
-    });
+    socketRef.current.emit("start_session", { exercise_id: poseId, pose_name: poseId, voice_mode: voiceMode });
   };
 
-  const endSession = () => {
-    clearInterval(timerRef.current);
-    cancel();
-    socketRef.current.emit("end_session");
-  };
+  const endSession = () => { clearInterval(timerRef.current); cancel(); socketRef.current.emit("end_session"); };
 
-  const handleDemoReady = useCallback(() => {
-    setPhase("calibrating");
-  }, []);
+  /* Derived values */
+  const isGym         = category === "gym";
+  const score         = feedback?.score ?? null;
+  const repCount      = feedback?.rep_count ?? 0;
+  const currentPhase  = feedback?.current_phase ?? "ready";
+  const isOnBreak     = feedback?.is_on_break ?? false;
+  const breakLeft     = feedback?.break_seconds_left ?? 0;
+  const holdSecs      = feedback?.good_hold_seconds ?? elapsed;
+  const breathPhase   = feedback?.breath_phase ?? "Breathe steady";
+  const statusColor   = score != null
+    ? score >= 80 ? "var(--green)" : score >= 50 ? "var(--amber)" : "var(--red)"
+    : "var(--brand)";
 
-  const score = feedback?.score ?? null;
-  const statusColor =
-    score !== null
-      ? score >= 80
-        ? "#8FAE8B"
-        : score >= 50
-        ? "#D9A257"
-        : "#EF4444"
-      : feedback?.status === "correct"
-      ? "#8FAE8B"
-      : "#E7B978";
-
-  const isGym = category === "gym";
-  const repCount = feedback?.rep_count ?? 0;
-  const currentPhase = feedback?.current_phase ?? "ready";
-  const isOnBreak = feedback?.is_on_break ?? false;
-  const breakSecondsLeft = feedback?.break_seconds_left ?? 0;
+  /* Phase badge text */
+  const phaseAccent = isGym ? "var(--gym)" : "var(--yoga)";
+  const phaseDim    = isGym ? "var(--gym-dim)" : "var(--yoga-dim)";
 
   return (
     <div className="session-layout">
-      {/* Kiosk Header */}
+
+      {/* ── Header ── */}
       <div className="session-header">
-        <div>
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 800,
-              textTransform: "uppercase",
-              letterSpacing: "0.8px",
-              color: isGym ? "#60A5FA" : "#34D399",
-              background: isGym ? "rgba(96,165,250,0.15)" : "rgba(52,211,153,0.15)",
-              padding: "4px 10px",
-              borderRadius: 6,
-              marginRight: 8,
-            }}
-          >
-            {isGym ? "🏋️ Gym Training" : "🧘 Yoga Posture"}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <span style={{
+            background: phaseDim, color: phaseAccent,
+            fontSize: 11, fontWeight: 800, letterSpacing: "0.07em", textTransform: "uppercase",
+            padding: "5px 12px", borderRadius: "var(--r-full)", flexShrink: 0,
+          }}>
+            {isGym ? "🏋️ Gym" : "🧘 Yoga"}
           </span>
-          <h1 style={{ display: "inline-block", fontSize: 26, margin: "6px 0 0 0" }}>
-            {exerciseInfo?.name || exerciseInfo?.label || "Loading exercise…"}
+          <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {exerciseInfo?.name ?? exerciseInfo?.label ?? "Loading…"}
           </h1>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          {phase === "monitoring" && score !== null && <ScoreGauge score={score} />}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+          {phase === "monitoring" && score !== null && <ScoreRing score={score} />}
           {phase === "monitoring" && (
-            <span className={`pill ${feedback?.status || ""}`}>
-              <span className="dot" /> {formatTime(elapsed)}
-            </span>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 7,
+              background: "var(--bg-2)", border: "1px solid var(--border)",
+              borderRadius: "var(--r-full)", padding: "6px 14px",
+            }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--green)", display: "inline-block",
+                animation: "pulse-dot 2s ease infinite" }} />
+              <span style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 700 }}>
+                {formatTime(elapsed)}
+              </span>
+            </div>
           )}
+          <button className="btn btn-ghost" onClick={() => navigate("/practice")}
+            style={{ padding: "8px 16px", fontSize: 13 }}>
+            ← Exit
+          </button>
         </div>
       </div>
 
-      {/* Voice mode toggle */}
+      {/* ── Voice mode row (demo phase only) ── */}
       {phase === "demo" && (
         <div className="voice-mode-row">
-          <span className="voice-mode-label">Audio Coaching Cues:</span>
+          <span className="voice-mode-label">Audio coaching:</span>
           {["beginner", "default", "advanced"].map((m) => (
-            <button
-              key={m}
-              className={`voice-mode-btn${voiceMode === m ? " active" : ""}`}
-              onClick={() => setVoiceMode(m)}
-            >
+            <button key={m} className={`voice-mode-btn${voiceMode === m ? " active" : ""}`}
+              onClick={() => setVoiceMode(m)}>
               {m.charAt(0).toUpperCase() + m.slice(1)}
             </button>
           ))}
         </div>
       )}
 
+      {/* ── Body ── */}
       {phase === "demo" ? (
-        <PoseDemo poseId={poseId} poseInfo={exerciseInfo} onReady={handleDemoReady} />
+        <div style={{ padding: "20px 24px" }}>
+          <PoseDemo poseId={poseId} poseInfo={exerciseInfo} onReady={() => setPhase("calibrating")} />
+        </div>
       ) : cameraDenied ? (
-        <div className="calibration-note">
-          Camera access was blocked. Allow camera permissions in your browser and reload this page to continue.
+        <div style={{ padding: "40px 24px" }}>
+          <div className="calibration-note" style={{ color: "var(--red)" }}>
+            🚫 Camera access was blocked. Allow camera permissions in your browser and reload.
+          </div>
         </div>
       ) : phase !== "complete" ? (
-        <>
-          {/* Main Dual Skeleton Camera View */}
-          <CameraView
-            onFrame={handleFrame}
-            statusColor={statusColor}
-            perJoint={feedback?.per_joint ?? null}
-            jointColors={feedback?.joint_colors}
-            ghostLandmarks={feedback?.ghost_landmarks}
-            problemJoints={feedback?.problem_joints}
-            feedbackCue={feedback?.speak?.[0]}
-            refinedLandmarks={feedback?.refined_landmarks}
-            enablePhysGNN={enablePhysGNN}
-          />
+        <div className="session-body">
 
-          {/* Kiosk Workout HUD (Gym Reps vs Yoga Hold) */}
-          {phase === "monitoring" && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isGym ? "repeat(4, 1fr)" : "repeat(3, 1fr)",
-                gap: 12,
-                marginTop: 16,
-              }}
-            >
-              {isGym ? (
-                <>
-                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
-                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>REPS</div>
-                    <div style={{ fontSize: 36, fontWeight: 900, color: "#38BDF8" }}>{repCount}</div>
-                  </div>
+          {/* Camera feed */}
+          <div>
+            <CameraView
+              onFrame={handleFrame}
+              statusColor={statusColor}
+              perJoint={feedback?.per_joint ?? null}
+              jointColors={feedback?.joint_colors}
+              ghostLandmarks={feedback?.ghost_landmarks}
+              problemJoints={feedback?.problem_joints}
+              feedbackCue={feedback?.speak?.[0]}
+              refinedLandmarks={feedback?.refined_landmarks}
+            />
 
-                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
-                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>PHASE</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "#FCD34D", marginTop: 8, textTransform: "uppercase" }}>
-                      {currentPhase}
-                    </div>
-                  </div>
-
-                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
-                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>FORM SCORE</div>
-                    <div style={{ fontSize: 36, fontWeight: 900, color: score >= 80 ? "#34D399" : score >= 50 ? "#FBBF24" : "#F87171" }}>
-                      {score ? Math.round(score) : "--"}
-                    </div>
-                  </div>
-
-                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
-                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>STATUS</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: isOnBreak ? "#F87171" : "#34D399", marginTop: 8 }}>
-                      {isOnBreak ? `Rest: ${breakSecondsLeft}s` : "ACTIVE"}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
-                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>HOLD TIME</div>
-                    <div style={{ fontSize: 36, fontWeight: 900, color: "#34D399" }}>
-                      {Math.round(feedback?.good_hold_seconds ?? elapsed)}s
-                    </div>
-                  </div>
-
-                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
-                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>BREATH</div>
-                    <div style={{ fontSize: 20, fontWeight: 800, color: "#38BDF8", marginTop: 6, textTransform: "capitalize" }}>
-                      {feedback?.breath_phase || "Breathe Steady"}
-                    </div>
-                  </div>
-
-                  <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(15,23,42,0.7)" }}>
-                    <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase" }}>ALIGNMENT</div>
-                    <div style={{ fontSize: 36, fontWeight: 900, color: score >= 80 ? "#34D399" : "#FBBF24" }}>
-                      {score ? `${Math.round(score)}%` : "--"}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {phase === "calibrating" && (
-            <div className="calibration-note" style={{ fontSize: 18, padding: 24 }}>
-              {visibleOk
-                ? "✓ Full body locked! Stand steady, starting workout in 3… 2… 1…"
-                : exerciseInfo?.camera_view === "side"
-                ? "Turn sideways to the camera until your full side profile is in frame."
-                : "Step back until your shoulders, hips, knees and ankles are all visible in frame."}
-            </div>
-          )}
-
-          {phase === "monitoring" && feedback?.errors?.length > 0 && (
-            <div className="live-feedback-panel" style={{ marginTop: 14 }}>
-              <div className="feedback-errors-list">
-                {feedback.errors.map((e, i) => (
-                  <div key={i} className={`feedback-error-item severity-${e.severity}`}>
-                    <span className="error-dot" />
-                    {e.feedback || e.direction}
-                  </div>
-                ))}
+            {/* Calibrating overlay */}
+            {phase === "calibrating" && (
+              <div className="calibration-note" style={{ marginTop: 14 }}>
+                {visibleOk
+                  ? "✅ Full body detected! Hold steady — starting in 3… 2… 1…"
+                  : exerciseInfo?.camera_view === "side"
+                  ? "↩️ Turn sideways to the camera until your full side profile is visible."
+                  : "⬅️ Step back until your shoulders, hips, knees and ankles are all in frame."}
               </div>
-            </div>
-          )}
+            )}
 
-          {phase === "monitoring" && (
-            <div className="controls-row" style={{ marginTop: 20 }}>
-              <button className="btn btn-primary" style={{ padding: "14px 40px", fontSize: 16 }} onClick={endSession}>
-                Complete Workout
-              </button>
-            </div>
-          )}
-        </>
+            {/* Error feedback */}
+            {phase === "monitoring" && feedback?.errors?.length > 0 && (
+              <div className="live-feedback-panel" style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.07em", textTransform: "uppercase",
+                  color: "var(--text-3)", marginBottom: 10 }}>
+                  Live Corrections
+                </div>
+                <div className="feedback-errors-list">
+                  {feedback.errors.map((e, i) => (
+                    <div key={i} className={`feedback-error-item severity-${e.severity ?? "minor"}`}>
+                      <span className="error-dot" />
+                      {e.feedback || e.direction}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* End workout button */}
+            {phase === "monitoring" && (
+              <div className="controls-row" style={{ marginTop: 20 }}>
+                <button className="btn btn-primary" onClick={endSession}
+                  style={{ flex: 1, padding: "15px", fontSize: 16 }}>
+                  ✅ Complete Workout
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ── Sidebar HUD ── */}
+          <div className="session-sidebar">
+            {isGym ? (
+              <>
+                <HudCard label="Reps" value={repCount} color="var(--gym)" accent />
+                <HudCard
+                  label="Phase"
+                  value={currentPhase.toUpperCase()}
+                  color="var(--amber)"
+                />
+                <HudCard
+                  label="Form Score"
+                  value={score != null ? Math.round(score) : "—"}
+                  unit="%"
+                  color={score != null ? (score >= 80 ? "var(--green)" : score >= 50 ? "var(--amber)" : "var(--red)") : "var(--text-3)"}
+                  accent
+                />
+                <HudCard
+                  label="Status"
+                  value={isOnBreak ? `Rest ${breakLeft}s` : "Active"}
+                  color={isOnBreak ? "var(--red)" : "var(--green)"}
+                  pulse={!isOnBreak}
+                />
+              </>
+            ) : (
+              <>
+                <HudCard label="Hold Time" value={Math.round(holdSecs)} unit="s" color="var(--yoga)" accent />
+                <HudCard label="Breath" value={breathPhase} color="var(--cyan)" />
+                <HudCard
+                  label="Alignment"
+                  value={score != null ? Math.round(score) : "—"}
+                  unit="%"
+                  color={score != null ? (score >= 80 ? "var(--green)" : "var(--amber)") : "var(--text-3)"}
+                  accent
+                />
+              </>
+            )}
+
+            {/* Timer card */}
+            {phase === "monitoring" && (
+              <div className="hud-card" style={{ background: "var(--bg-2)" }}>
+                <div className="hud-label">Session Time</div>
+                <div style={{
+                  fontFamily: "var(--font-display)", fontSize: 32, fontWeight: 800,
+                  letterSpacing: "0.04em", color: "var(--text-2)",
+                }}>
+                  {formatTime(elapsed)}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         <SessionSummary
           summary={summary}
@@ -343,135 +435,17 @@ export default function SessionView() {
         />
       )}
 
+      {/* Voice toast */}
       {toastMsg && (
         <div className="voice-toast" key={toastMsg}>
-          <span className="toast-icon">🗣</span> {toastMsg}
+          <span className="toast-icon">🗣</span>
+          {toastMsg}
         </div>
       )}
-    </div>
-  );
-}
-
-function ScoreGauge({ score }) {
-  const clamp = Math.max(0, Math.min(100, score));
-  const color = clamp >= 80 ? "#34D399" : clamp >= 50 ? "#FBBF24" : "#EF4444";
-  const radius = 18;
-  const circ = 2 * Math.PI * radius;
-  const dash = (clamp / 100) * circ;
-
-  return (
-    <div className="score-gauge" title={`Pose score: ${score}`}>
-      <svg width="48" height="48" viewBox="0 0 48 48">
-        <circle cx="24" cy="24" r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
-        <circle
-          cx="24"
-          cy="24"
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeDasharray={`${dash} ${circ}`}
-          strokeDashoffset={circ * 0.25}
-          style={{ transition: "stroke-dasharray 0.3s ease, stroke 0.3s ease" }}
-        />
-      </svg>
-      <span className="score-num" style={{ color }}>
-        {Math.round(clamp)}
-      </span>
-    </div>
-  );
-}
-
-function SessionSummary({ summary, onDone, onRetry }) {
-  if (!summary) return null;
-
-  const isGym = summary.category === "gym";
-
-  return (
-    <div className="card summary-card" style={{ maxWidth: 700, margin: "0 auto", padding: 32 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <h2 style={{ fontSize: 28, margin: 0 }}>Workout Complete! 🏅</h2>
-        <span
-          style={{
-            background: isGym ? "rgba(96,165,250,0.2)" : "rgba(52,211,153,0.2)",
-            color: isGym ? "#60A5FA" : "#34D399",
-            fontWeight: 800,
-            fontSize: 12,
-            textTransform: "uppercase",
-            padding: "4px 12px",
-            borderRadius: 8,
-          }}
-        >
-          {isGym ? "Gym Workout" : "Yoga Session"}
-        </span>
-      </div>
-
-      <p className="muted" style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 24 }}>
-        {summary.summary}
-      </p>
-
-      <div className="summary-stats" style={{ marginBottom: 28 }}>
-        {isGym ? (
-          <div>
-            <div className="stat-num" style={{ color: "#38BDF8" }}>{summary.total_reps || 0}</div>
-            <div className="stat-cap">Total Reps Completed</div>
-          </div>
-        ) : (
-          <div>
-            <div className="stat-num" style={{ color: "#34D399" }}>{Math.round(summary.hold_time_seconds || 0)}s</div>
-            <div className="stat-cap">of a {summary.target_hold_seconds}s target hold</div>
-          </div>
-        )}
-
-        <div>
-          <div className="stat-num" style={{ color: summary.avg_score >= 80 ? "#34D399" : "#FBBF24" }}>
-            {summary.avg_score || summary.accuracy_pct || 0}
-          </div>
-          <div className="stat-cap">Average Form Score</div>
-        </div>
-
-        <div>
-          <div className="stat-num" style={{ color: "#A78BFA" }}>
-            {summary.score_trend > 0 ? `+${summary.score_trend}` : summary.score_trend || "Stable"}
-          </div>
-          <div className="stat-cap">Session Momentum</div>
-        </div>
-      </div>
-
-      {summary.tips?.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 17, marginBottom: 12 }}>AI Coach Recommendations:</h3>
-          <ul className="tip-list">
-            {summary.tips.map((t, i) => (
-              <li key={i} style={{ fontSize: 15, lineHeight: 1.5 }}>{t}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {summary.caveat && (
-        <p className="clinical-caveat" style={{ fontSize: 12, opacity: 0.75, marginBottom: 24 }}>
-          {summary.caveat}
-        </p>
-      )}
-
-      <div className="controls-row">
-        <button className="btn btn-primary" onClick={onDone} style={{ padding: "12px 30px" }}>
-          View History & PBs
-        </button>
-        <button className="btn btn-ghost" onClick={onRetry} style={{ padding: "12px 24px" }}>
-          Do Another Set
-        </button>
-      </div>
     </div>
   );
 }
 
 function formatTime(s) {
-  const m = Math.floor(s / 60)
-    .toString()
-    .padStart(2, "0");
-  const sec = (s % 60).toString().padStart(2, "0");
-  return `${m}:${sec}`;
+  return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 }
